@@ -1,0 +1,229 @@
+@import './tokens.css';
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  margin: 0 0 var(--step-8);
+  letter-spacing: -0.01em;
+}
+
+button {
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+.app-shell {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+/* ── Progress bar ─────────────────────────────── */
+.progress-bar {
+  padding: var(--step-16) var(--step-16) var(--step-12);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+  z-index: 5;
+}
+.progress-bar .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: var(--step-8);
+}
+.progress-track {
+  display: flex;
+  gap: 4px;
+}
+.progress-segment {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.progress-segment.done { background: var(--field-green); }
+.progress-segment.current { background: var(--accredited-blue); }
+
+/* ── Content area ─────────────────────────────── */
+.step-content {
+  flex: 1;
+  padding: var(--step-24) var(--step-16) 120px;
+}
+
+.field {
+  margin-bottom: var(--step-16);
+}
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--ink-soft);
+}
+.field select,
+.field input[type="text"],
+.field input[type="tel"],
+.field input[type="password"],
+.field input[type="email"] {
+  width: 100%;
+  min-height: var(--tap-target);
+  padding: 0 var(--step-12);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 16px;
+  color: var(--ink);
+}
+.field select:focus,
+.field input:focus {
+  outline: 2px solid var(--accredited-blue);
+  outline-offset: 1px;
+}
+.field .error-text {
+  color: var(--error-red);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* ── Ledger / tally sheet — signature element for vote-count entry ──
+   Mirrors the physical result sheet the agent is photographing, so the
+   digital record visibly maps to the paper original. */
+.ledger {
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+}
+.ledger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--step-12) var(--step-12);
+  border-bottom: 1px solid var(--line);
+}
+.ledger-row:last-child { border-bottom: none; }
+.ledger-row .ledger-label {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.ledger-row input {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  text-align: right;
+  width: 110px;
+  border: none;
+  border-bottom: 2px solid var(--line);
+  background: transparent;
+  padding: 4px 2px;
+}
+.ledger-row input:focus {
+  outline: none;
+  border-bottom-color: var(--accredited-blue);
+}
+.ledger-row.derived .ledger-label { color: var(--ink); font-weight: 600; }
+.ledger-row.error input { border-bottom-color: var(--error-red); }
+
+/* ── Bottom action bar — one-handed thumb reach in the field ─────── */
+.action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  gap: var(--step-12);
+  padding: var(--step-12) var(--step-16) calc(var(--step-12) + env(safe-area-inset-bottom));
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+.btn {
+  min-height: var(--tap-target);
+  border-radius: var(--radius);
+  border: none;
+  font-size: 15px;
+  cursor: pointer;
+}
+.btn-primary {
+  flex: 1;
+  background: var(--field-green);
+  color: #fff;
+}
+.btn-primary:disabled {
+  background: var(--line);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+.btn-secondary {
+  flex: 0 0 96px;
+  background: transparent;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+}
+
+/* ── Status pill ──────────────────────────────── */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.status-pill.pending { background: #F5E6D3; color: var(--alert-amber); }
+.status-pill.submitted { background: #DCEEE4; color: var(--field-green-dark); }
+.status-pill.flagged { background: #F6DAD8; color: var(--error-red); }
+
+.reference-number {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.camera-frame {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1.5px solid var(--line);
+  background: #000;
+  aspect-ratio: 3/4;
+}
+.camera-frame video, .camera-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.camera-frame .guide-overlay {
+  position: absolute;
+  inset: 8%;
+  border: 2px dashed rgba(247, 245, 240, 0.85);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
