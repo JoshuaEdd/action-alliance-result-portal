@@ -1,0 +1,414 @@
+{
+  "federalConstituency": "Ahiazu Ezinihitte Federal Constituency",
+  "localGovernments": [
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Ogbe",
+      "polling_units": [
+        "Amuzu Hall",
+        "Town School Ogbe",
+        "Umuihiokwu Town Ogbe",
+        "Aladinma Hall Umuoma",
+        "Central Sch. Ogbe (Afor‐Ogbe Mkt. Sq. I)",
+        "Umuokeawa Hall",
+        "Ndi Owere Hall",
+        "Umuihi Hall",
+        "Oduga Hall",
+        "Amaorji Hall",
+        "Ndiohia Hall",
+        "Umueleke Hall",
+        "Central Sch.Ogbe (Afor‐Ogbe Mkt. Sq. Ii)",
+        "Umulolo Hall",
+        "Community School Umuokeawa"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Otulu /Aguneze",
+      "polling_units": [
+        "Umuagu Hall Otulu",
+        "Ihitte Hall",
+        "Community School Otulu",
+        "Umuoyaa Hall",
+        "Otulu Sec. School",
+        "Umuakam Otulu Unity Hall",
+        "Group School Otulu",
+        "Umuirem Hall",
+        "Umuakpore Ukwu Aguneze",
+        "Umuoke Hall Otulu",
+        "Community School Aguneze",
+        "Otulu Civic Centre I",
+        "Otulu Civic Centre II"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Oru ‐Na‐Lude",
+      "polling_units": [
+        "Community School Oru I",
+        "Community School Oru II",
+        "Town School Oru",
+        "Akpakanwandu Hall",
+        "Umuogologoh Hall",
+        "Umudimugwe Hall",
+        "Umukpo Hall Lude",
+        "Community School Lude I Community School Lude II Ahiazu Sec. School"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Nnarambia",
+      "polling_units": [
+        "Community School Nnarambia I",
+        "Community School Nnarambia II",
+        "Ahiara Tech. Sec. School I",
+        "Ahiara Tech. Sec. School II",
+        "Umuofor Hall I",
+        "Umuofor Hall II",
+        "Umunagere Hall",
+        "Ahiara Tech. Sec. School"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Okirika Nwenkwo",
+      "polling_units": [
+        "Umuagbavu Town Hall I",
+        "Civic Hall Umezuo",
+        "Central Sch.Umuokirika (Old St. Patricks)",
+        "Okirika Ama Hall I",
+        "Okirika Ama Hall II",
+        "Group School Umuokirika",
+        "Umugwa Village Hall",
+        "Town School Umuokirika",
+        "Okwu Owere Hall",
+        "Umuagbavu Town Hall II"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Amuzi /Ihenworie",
+      "polling_units": [
+        "Ahiarama/Umuakalor Court",
+        "Central School Amuzi I",
+        "Central School Amuzi II",
+        "Central School Ogwama",
+        "Community Prim.Sch Amuzi (Ekeamuzi Mkt.Square)",
+        "Community School Amuzi",
+        "Group School Akabor I",
+        "Group School Akabor II",
+        "Group School Akabor III",
+        "Mmagbuabighama Hall",
+        "Ogwama Civic Centre",
+        "Primary School Obodoujuchi",
+        "Umuakali/Umubbi/Ugwu Hall",
+        "Umudiwukwaku Hall",
+        "Umuelu/Umuokoro Town School I",
+        "Umuelu/Umuokoro Town School II",
+        "Umuigwe/Umuduru Hall",
+        "Umuodu Hall",
+        "Umush/Umasfimaniokpu Hall"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Okirika Nweke",
+      "polling_units": [
+        "Community School Akpim I",
+        "Community School Akpim II",
+        "Community School Akpim III",
+        "Community Sch. Okirika Nweke I",
+        "Community School Okirika Nweke II",
+        "Community School Okirika Nweke III",
+        "Comprehensive Sec.Sch.Okirikanweke (Umudurueze Hall/Sq)",
+        "Lomoma Hall Umuakam (Umuakam Sq. II)",
+        "Umuakam Hall (Umuakam Sq.(I))",
+        "Umudurueze Hall"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Obohia /Ekwereazu",
+      "polling_units": [
+        "Ariam Hall Ekwerazu Town",
+        "Central School Obohia",
+        "Comm.Prim.Sch.Ekwerazu Town (Afor‐Amadi Square)",
+        "Community School Ekwereazu Town",
+        "Community School Obohia",
+        "Group School Eloken‐Owara",
+        "Ihitte Hall Obohia",
+        "Ndi Owerre Hall",
+        "Obohia Sec. Tech. School",
+        "Town School Obohia",
+        "Umudu Mocha Hall",
+        "Umuduruji Hall"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Mpam",
+      "polling_units": [
+        "Central Sch.Mpam (Orie Umuaju)",
+        "Community School Mpam I",
+        "Community School Mpam II",
+        "Community School Nwamere",
+        "Group School Okpankum",
+        "Nkwumugegwu Hall I",
+        "Nkwumugegwu Hall II",
+        "Umuasechariaino Mbara",
+        "Umuibozim Mpam"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Oparanadim",
+      "polling_units": [
+        "Central School Eziama",
+        "Comm. Sch. Oparanadim Nweafor",
+        "Community School Eziama I",
+        "Community School Eziama II",
+        "Community School Opraranadim Nwenkwo I",
+        "Community School Opraranadim Nwenkwo II",
+        "Group School Eziama",
+        "Ihenkwo Hall",
+        "Ihitte Ubi Community School",
+        "Umuezevum Hall (Umuezevum Eziama Sq.)"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Umunumo /Umuchieze",
+      "polling_units": [
+        "Central School Isiokpu",
+        "Community School Isiokpu",
+        "Umuchieze Civic Hall I",
+        "Umuchieze Civic Hall II",
+        "Umuesi Hall",
+        "Umunumo Hall I",
+        "Umunumo Hall II",
+        "Umuobi Hall",
+        "Umuokehi/Umudionu Hall"
+      ]
+    },
+    {
+      "lga": "Ahiazu Mbaise L.G.A.",
+      "ward": "Ogbor /Umueze",
+      "polling_units": [
+        "Boys' Sec. School Ekwereazu",
+        "Central School Ihitte Afor",
+        "Ugwuaku Hall I",
+        "Ugwuaku Hall II",
+        "Umudiabali Hall",
+        "Umukete Hall",
+        "Umuoni Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Amumara",
+      "polling_units": [
+        "Central School Amaumara I",
+        "Central School Amaumara II",
+        "Isiama N-Ndara Hall",
+        "Obibi Square",
+        "Okohia Hall",
+        "Okpanku Hall",
+        "Otulu Hall",
+        "Town School Amumara",
+        "Ubahi Hall",
+        "Umuokpo Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Chokoneze/Akpodim /Ife",
+      "polling_units": [
+        "Afor Akpodim Square",
+        "Central School Akpodim I",
+        "Central School Akpodim II",
+        "Central School Chokoneze",
+        "Central School Ife",
+        "Central School Uneze",
+        "Comm. School Chokoneze I",
+        "Comm. School Chokoneze II",
+        "Comm. School Ife",
+        "Egbelu Okpurulo Square",
+        "Emedike Hall",
+        "Nkwuuhie Square",
+        "Nrii Hall Ife",
+        "Ofeama Hall Ife I",
+        "Ofeama Hall Ife II",
+        "Owutu Hall Ife",
+        "Town School Ife",
+        "Umuaghara Hall",
+        "Umuagom Hall",
+        "Umuajala Hall Chokoneze",
+        "Umuakam Hall",
+        "Umudim Ukwu Hall",
+        "Umunaevo Hall",
+        "Umunwanwiri Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Eziudo",
+      "polling_units": [
+        "Amakam Hall",
+        "Ezeakam Hall",
+        "Ezihu Hall",
+        "Ezikpi Aladinma",
+        "Umuagu Hall",
+        "Umuagwu Hall",
+        "Umualim/Ikenga Hall",
+        "Umuakam Hall",
+        "Umuchekwa",
+        "Umuekwerede I",
+        "Umuekwerede II",
+        "Umuezeaku Hall",
+        "Umuhu",
+        "Umulolo Hall",
+        "Umunebia Hall",
+        "Umuokoro Hall",
+        "Umuzu Square"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Ihitte",
+      "polling_units": [
+        "Amaukwu Okoromiri Square",
+        "Comm. School Ihitte",
+        "Eziala Hall",
+        "Group School Ihitte",
+        "Obiaka Hall",
+        "Oparachi Hall",
+        "Umunagbor Hall",
+        "Umunagbor Hall",
+        "Umuocham Hall",
+        "Umuomaoke Hall",
+        "Umuokwuru Hall",
+        "Umuokwuru Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Itu",
+      "polling_units": [
+        "Central School Itu",
+        "Comm. School Itu",
+        "Eluama Hall",
+        "Nkwo Na-Okpuala Hall",
+        "Town School Itu",
+        "Umuafor Hall",
+        "Umuekwene Hall",
+        "Umuezea Hall",
+        "Umuisu Hall",
+        "Umunaga Hall",
+        "Umuoria Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Oboama / Umunama",
+      "polling_units": [
+        "Amorji Square",
+        "Comm. School Oboama",
+        "Nkwo Ogbor",
+        "Oboama / Umunama",
+        "Oboama / Umunama / Umuoshi Hall",
+        "Otasi Square",
+        "Umuekwere Hall",
+        "Umuodoko Square"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Okpofe / Ezeagbogu",
+      "polling_units": [
+        "Amaforeze Square Okpofe",
+        "Amato Hall I",
+        "Amato Hall II",
+        "Central Sch. Okpofe",
+        "Central School I",
+        "Central School II",
+        "Chukwuoma Hall",
+        "Comm. School Eziagbogu",
+        "Comm. School Okpofe",
+        "Comm. Sec. School",
+        "Uke-Na-Uga Hall",
+        "Umunachi Hall I",
+        "Umunachi Hall II",
+        "Umuochaku Hall",
+        "Umuoma Hall Okpofe",
+        "Umuotirikpo Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Onicha I",
+      "polling_units": [
+        "Com. Sch. Umuawada",
+        "Comm. School. Umuekwene I",
+        "Comm. School. Umuekwene II",
+        "Umuawada Umuchima Hall",
+        "Umuoma Hall",
+        "Umuoma Square I",
+        "Umuoma Square II"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Onicha II",
+      "polling_units": [
+        "Aladinma (Umuoshi Hall)",
+        "Aladinma Umulegwa",
+        "Arugwueze Hall",
+        "Central Sch. Ezi-East (St. Dom)",
+        "Town Sch. Ubonukam",
+        "Umubo Hall",
+        "Umunwanyi Comm. Hall"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Onicha III",
+      "polling_units": [
+        "Umuaghara Hall I",
+        "Umuaghara Hall II",
+        "Umuevu Square I",
+        "Umuevu Square II",
+        "Umuevu Square III",
+        "Umuhu Hall I",
+        "Umuhu Hall II"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Onicha IV",
+      "polling_units": [
+        "Eziama Hall",
+        "Omukwu Hall",
+        "Omukwu Square I",
+        "Omukwu Square II"
+      ]
+    },
+    {
+      "lga": "Ezinihitte Mbaise L.G.A.",
+      "ward": "Udo-Na-Obizi",
+      "polling_units": [
+        "Akunari Obizi",
+        "Amudi Hall I",
+        "Amudi Hall II",
+        "Comm. Sch. Obokwu",
+        "Comm. School Udo",
+        "Ekwerazu Hall Obizi",
+        "Ovurukwu Obizi",
+        "Town School Obizi",
+        "Uhuala Udo Hall",
+        "Umuire Hall Obizi",
+        "Umuosisi Obizi",
+        "Umuosisi Obizi"
+      ]
+    }
+  ]
+}
