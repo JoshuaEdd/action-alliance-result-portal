@@ -8,21 +8,31 @@ export default function CameraCapture({ label, onCapture, captured }) {
   const streamRef = useRef(null);
   const [error, setError] = useState(null);
   const [active, setActive] = useState(false);
+  const [stream, setStream] = useState(null);
 
   const startCamera = useCallback(async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 } },
         audio: false,
       });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      streamRef.current = mediaStream;
+      setStream(mediaStream);
       setActive(true);
     } catch {
       setError('Camera access is required to capture this photo.');
     }
   }, []);
+
+  // The <video> element only mounts once `active` is true, so the stream
+  // can't be attached synchronously inside startCamera (the ref is still
+  // null at that point) — this runs after React commits the new element.
+  useEffect(() => {
+    if (active && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [active, stream]);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
 

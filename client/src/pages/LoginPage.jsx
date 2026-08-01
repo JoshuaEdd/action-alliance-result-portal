@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
   const { loginPassword } = useAuth();
   const navigate = useNavigate();
+  const { state } = useLocation();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -30,6 +31,11 @@ export default function LoginPage() {
       <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 32 }}>
         Polling unit agent sign-in
       </p>
+      {state?.justRegistered && (
+        <p style={{ color: 'var(--field-green-dark)', fontSize: 14, marginBottom: 16 }}>
+          Account created — sign in below.
+        </p>
+      )}
       <form onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor="identifier">Email or phone number</label>
@@ -59,6 +65,9 @@ export default function LoginPage() {
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+      <p style={{ fontSize: 13, marginTop: 16, textAlign: 'center' }}>
+        New agent? <Link to="/register">Create an account with your invite code</Link>
+      </p>
     </div>
   );
 }

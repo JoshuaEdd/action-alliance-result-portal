@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import Layout from '../components/Layout';
 import Breadcrumb from '../components/Breadcrumb';
+import InviteCodesPanel from '../components/InviteCodesPanel';
 
 const PHOTO_LABELS = {
   agent_tag: 'Agent tag',
@@ -73,7 +74,12 @@ export default function PollingUnitPage() {
       </div>
 
       {!hasSubmission ? (
-        <p style={{ color: 'var(--ink-soft)' }}>No accepted result has been submitted for this polling unit yet.</p>
+        <>
+          <p style={{ color: 'var(--ink-soft)', marginBottom: 24 }}>
+            No accepted result has been submitted for this polling unit yet.
+          </p>
+          <InviteCodesPanel pollingUnitId={id} />
+        </>
       ) : (
         <>
           <div className="card-grid">

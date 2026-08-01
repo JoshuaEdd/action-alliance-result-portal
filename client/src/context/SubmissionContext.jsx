@@ -9,9 +9,6 @@ const DRAFT_KEY = 'result-draft-v1';
 export const STEPS = ['location', 'votes', 'agent', 'photos', 'preview'];
 
 const emptyDraft = {
-  localGovernmentId: '',
-  wardId: '',
-  pollingUnitId: '',
   totalRegisteredVoters: '',
   totalAccreditedVoters: '',
   totalValidVotes: '',
@@ -22,7 +19,7 @@ const emptyDraft = {
 };
 
 export function SubmissionProvider({ children }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState(() => {
     try {
@@ -62,7 +59,13 @@ export function SubmissionProvider({ children }) {
   const submit = useCallback(async () => {
     setSubmitting(true);
     setSubmitError(null);
-    const fields = { ...draft, captureLat: gps?.lat, captureLng: gps?.lng, capturedAt: gps?.capturedAt };
+    const fields = {
+      ...draft,
+      pollingUnitId: user.assignedPollingUnitId,
+      captureLat: gps?.lat,
+      captureLng: gps?.lng,
+      capturedAt: gps?.capturedAt,
+    };
 
     try {
       if (navigator.onLine) {
@@ -89,7 +92,7 @@ export function SubmissionProvider({ children }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, gps, photos, token, clearDraft]);
+  }, [draft, gps, photos, token, user, clearDraft]);
 
   // Retry queued submissions whenever connectivity returns
   useEffect(() => {

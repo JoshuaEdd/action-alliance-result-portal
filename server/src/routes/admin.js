@@ -237,6 +237,79 @@ router.get('/export/pdf/polling-units/:id', audit('export_pdf'), async (req, res
   doc.end();
 });
 
+// ── Invite codes — how a self-registering agent gets vetted for a
+// specific polling unit (any admin role can generate/view; codes are
+// scoped to whatever PU the admin picks, not to the admin's own scope) ──
+function generateCode() {
+  // Short, easy to read aloud/type: e.g. "7K3P-QX9M"
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I ambiguity
+  const part = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `${part()}-${part()}`;
+}
+
+router.post('/invite-codes', audit('create_invite_code'), async (req, res) => {
+  const { pollingUnitId, expiresInDays } = req.body;
+  if (!pollingUnitId) return res.status(400).json({ error: 'pollingUnitId is required' });
+
+  // A PU that already has an agent doesn't need a new code
+  const { rows: existingAgent } = await pool.query(
+    `SELECT id FROM users WHERE assigned_polling_unit_id = $1 AND role = 'agent'`,
+    [pollingUnitId]
+  );
+  if (existingAgent[0]) {
+    return res.status(409).json({ error: 'This polling unit already has a registered agent' });
+  }
+
+  let code;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    code = generateCode();
+    const { rows } = await pool.query(`SELECT 1 FROM invite_codes WHERE code = $1`, [code]);
+    if (!rows[0]) break;
+    code = null;
+  }
+  if (!code) return res.status(500).json({ error: 'Could not generate a unique code, please retry' });
+
+  const { rows } = await pool.query(
+    `INSERT INTO invite_codes (code, polling_unit_id, created_by, expires_at)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, code, polling_unit_id, expires_at, created_at`,
+    [
+      code,
+      pollingUnitId,
+      req.user.id,
+      expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : null,
+    ]
+  );
+  res.status(201).json(rows[0]);
+});
+
+router.get('/invite-codes', audit('view_invite_codes'), async (req, res) => {
+  const { pollingUnitId } = req.query;
+  const { rows } = await pool.query(
+    `SELECT ic.id, ic.code, ic.polling_unit_id, ic.expires_at, ic.created_at,
+            ic.used_at, u.full_name AS used_by_name,
+            pu.name AS pu_name, pu.pu_number
+     FROM invite_codes ic
+     JOIN polling_units pu ON pu.id = ic.polling_unit_id
+     LEFT JOIN users u ON u.id = ic.used_by
+     WHERE ($1::uuid IS NULL OR ic.polling_unit_id = $1)
+     ORDER BY ic.created_at DESC
+     LIMIT 100`,
+    [pollingUnitId || null]
+  );
+  res.json(rows);
+});
+
+// Revoke an unused code (e.g. it was issued to the wrong person and shared insecurely)
+router.delete('/invite-codes/:id', audit('revoke_invite_code'), async (req, res) => {
+  const { rows } = await pool.query(
+    `DELETE FROM invite_codes WHERE id = $1 AND used_by IS NULL RETURNING id`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Code not found, or already used' });
+  res.json({ deleted: true });
+});
+
 // ── SEC-4 — correction request workflow (never a direct edit) ──────
 router.post('/correction-requests', audit('create_correction_request'), async (req, res) => {
   const { submissionId, fieldName, proposedValue, reason } = req.body;

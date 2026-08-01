@@ -55,6 +55,13 @@ CREATE TABLE users (
   CONSTRAINT email_or_phone CHECK (email IS NOT NULL OR phone_number IS NOT NULL)
 );
 
+-- One agent per polling unit — enforced at the DB level, not just in
+-- application code, so a race between two simultaneous registrations
+-- with different (still-valid) codes for the same PU can't both succeed.
+CREATE UNIQUE INDEX one_agent_per_polling_unit
+  ON users (assigned_polling_unit_id)
+  WHERE assigned_polling_unit_id IS NOT NULL AND role = 'agent';
+
 -- One-time tokens for 2FA on every login (FR-1.2, SEC-required on admin too)
 CREATE TABLE otp_codes (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -146,6 +153,27 @@ CREATE TABLE correction_approvals (
   decided_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (correction_request_id, admin_id)
 );
+
+-- ─────────────────────────────────────────────
+-- Invite codes: one-time, per-polling-unit codes that let an agent
+-- self-register without an admin manually creating their account.
+-- Vets *which polling unit* a self-registered agent can claim.
+-- ─────────────────────────────────────────────
+CREATE TABLE invite_codes (
+  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  code                TEXT NOT NULL UNIQUE,
+  polling_unit_id     UUID NOT NULL REFERENCES polling_units(id),
+  created_by          UUID NOT NULL REFERENCES users(id),
+  used_by             UUID REFERENCES users(id),
+  used_at             TIMESTAMPTZ,
+  expires_at          TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A polling unit may have several unused codes issued over time (e.g. a
+-- previous one expired), but only one may ever be *used* — that's what
+-- actually claims the PU, enforced by the app layer at registration time.
+CREATE INDEX invite_codes_polling_unit_idx ON invite_codes (polling_unit_id);
 
 -- ─────────────────────────────────────────────
 -- SEC-11: immutable audit log of every administrator action

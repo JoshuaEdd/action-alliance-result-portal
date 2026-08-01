@@ -44,16 +44,25 @@ re-run.
 `npm run create-admin` creates the first `chief_admin` account so you can
 actually sign into the admin portal (its own account-creation UI requires
 being logged in as a Chief Admin already, so the very first one has to be
-bootstrapped this way). You'll also need at least one `agent` account —
-there's no self-registration UI yet, so insert one directly:
+bootstrapped this way).
 
-```sql
--- password hash generated with bcrypt, e.g. via:
--- node -e "require('bcrypt').hash('yourpassword', 10).then(console.log)"
-INSERT INTO users (role, full_name, email, password_hash, assigned_polling_unit_id, location_locked)
-VALUES ('agent', 'Agent Name', 'agent@example.com', '<bcrypt-hash>',
-        (SELECT id FROM polling_units WHERE pu_number = '001' LIMIT 1), true);
-```
+**Getting agents onto the system** now goes through self-registration with
+an invite code, not manual DB inserts:
+1. As an admin, open a polling unit that has no agent yet
+   (`/polling-unit/:id` in the admin app) and click **Generate code** under
+   "Agent invite codes."
+2. Give that code to the real agent for that PU.
+3. The agent visits the agent app's `/register` page, enters the code
+   along with their name/contact/password — this creates their account
+   *and* permanently assigns + locks them to that polling unit
+   (`server/src/routes/auth.js`'s `/register` route).
+
+A code is single-use and tied to one specific polling unit, so registering
+doesn't let someone claim just any PU — that's the whole point of routing
+account creation through admin-issued codes rather than leaving it open.
+A PU that already has an agent can't have a new code generated for it
+(enforced both in the API and via a DB-level unique index, so a race
+between two codes for the same PU can't both succeed).
 
 ### 2. API
 
@@ -83,7 +92,7 @@ Sign in with the Chief Admin account created above.
 
 | Section | Status |
 |---|---|
-| §3.1 Authentication (FR-1.1–1.5) | Done — password + 2FA OTP, lockout, session timeout |
+| §3.1 Authentication (FR-1.1–1.5) | Done — password + 2FA OTP, lockout, session timeout, plus invite-code self-registration for agents (vets which polling unit they can claim) |
 | §3.2 Submission wizard (FR-2.1–2.14) | Done — 5-step wizard, live-camera-only capture, GPS+timestamp, offline queue via IndexedDB, local draft autosave |
 | §4 Admin portal (FR-3, FR-4) | Done — dashboard summary, LGA/ward/PU drill-down with breadcrumbs, quick search, CSV + PDF export, near-real-time polling refresh (15s) |
 | §5 Non-functional | Mobile-first layout on the agent app addresses NFR-1; offline queueing on the agent side |

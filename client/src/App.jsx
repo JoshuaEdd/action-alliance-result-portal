@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SubmissionProvider } from './context/SubmissionContext';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 import OtpPage from './pages/OtpPage';
 import WizardPage from './pages/WizardPage';
 import ConfirmationPage from './pages/ConfirmationPage';
@@ -17,6 +18,7 @@ function Routed() {
   return (
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/submit" replace /> : <LoginPage />} />
+      <Route path="/register" element={token ? <Navigate to="/submit" replace /> : <RegisterPage />} />
       <Route path="/verify" element={<OtpPage />} />
       <Route
         element={

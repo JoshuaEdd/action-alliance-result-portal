@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 async function request(path, { method = 'GET', body, token, isForm = false } = {}) {
   const headers = {};
@@ -22,15 +22,16 @@ async function request(path, { method = 'GET', body, token, isForm = false } = {
 }
 
 export const api = {
+  register: (inviteCode, fullName, identifier, password) =>
+    request('/auth/register', { method: 'POST', body: { inviteCode, fullName, identifier, password } }),
+
   loginPassword: (identifier, password) =>
     request('/auth/login/password', { method: 'POST', body: { identifier, password } }),
 
   verifyOtp: (preAuthToken, code) =>
     request('/auth/login/verify-otp', { method: 'POST', body: { preAuthToken, code } }),
 
-  getLGAs: (token) => request('/locations/local-governments', { token }),
-  getWards: (token, lgaId) => request(`/locations/local-governments/${lgaId}/wards`, { token }),
-  getPollingUnits: (token, wardId) => request(`/locations/wards/${wardId}/polling-units`, { token }),
+  getMyPollingUnit: (token) => request('/locations/my-polling-unit', { token }),
 
   submitResult: (token, formData) =>
     request('/submissions', { method: 'POST', token, body: formData, isForm: true }),
