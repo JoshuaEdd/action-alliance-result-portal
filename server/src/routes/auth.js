@@ -106,7 +106,7 @@ router.post('/login/password', loginLimiter, async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT * FROM users WHERE (email = $1 OR phone_number = $1) AND is_active = TRUE`,
+    `SELECT * FROM users WHERE (email = $1 OR phone_number = $1) AND is_active = TRUE AND deleted_at IS NULL`,
     [identifier]
   );
   const user = rows[0];

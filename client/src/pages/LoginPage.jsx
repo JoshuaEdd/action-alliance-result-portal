@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Input, Button } from '@heroui/react';
 import { useAuth } from '../context/AuthContext';
+import AaLogo from '../components/AaLogo';
 
 export default function LoginPage() {
   const { loginPassword } = useAuth();
@@ -26,46 +28,48 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="step-content" style={{ paddingTop: 64 }}>
-      <h1 style={{ fontSize: 24 }}>Result Portal</h1>
-      <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 32 }}>
-        Polling unit agent sign-in
-      </p>
+    <div className="max-w-sm mx-auto pt-24 px-4" style={{ paddingTop: '4rem' }}>
+      <div className="flex items-center gap-3 mb-6">
+        <AaLogo size={56} />
+        <div>
+          <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Action Alliance</h1>
+          <div className="text-[11px] tracking-[0.06em] uppercase" style={{ fontFamily: 'var(--font-mono)', color: 'var(--aa-gold-dark)' }}>
+            Result Portal sign-in
+          </div>
+        </div>
+      </div>
       {state?.justRegistered && (
-        <p style={{ color: 'var(--field-green-dark)', fontSize: 14, marginBottom: 16 }}>
+        <p className="text-sm mb-4" style={{ color: 'var(--field-green-dark)' }}>
           Account created — sign in below.
         </p>
       )}
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="identifier">Email or phone number</label>
-          <input
-            id="identifier"
-            type="text"
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            autoComplete="username"
-            required
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            minLength={8}
-            required
-          />
-        </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Input
+          label="Email or phone number"
+          type="text"
+          value={identifier}
+          onValueChange={setIdentifier}
+          isRequired
+          autoComplete="username"
+          variant="bordered"
+          size="lg"
+        />
+        <Input
+          label="Password"
+          type="password"
+          value={password}
+          onValueChange={setPassword}
+          isRequired
+          autoComplete="current-password"
+          variant="bordered"
+          size="lg"
+        />
         {error && <p className="error-text">{error}</p>}
-        <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
+        <Button type="submit" color="primary" fullWidth size="lg" isLoading={loading}>
           {loading ? 'Signing in…' : 'Sign in'}
-        </button>
+        </Button>
       </form>
-      <p style={{ fontSize: 13, marginTop: 16, textAlign: 'center' }}>
+      <p className="text-sm mt-4 text-center">
         New agent? <Link to="/register">Create an account with your invite code</Link>
       </p>
     </div>

@@ -1,16 +1,31 @@
 :root {
   /* Color — a ledger, not a startup app: this record has to feel as
-     trustworthy as the paper result sheet it's standing in for. */
-  --ink: #16241F;
-  --ink-soft: #3C4B42;
-  --paper: #F7F5F0;
-  --paper-dim: #ECE8DE;
-  --field-green: #1F6E4B;
-  --field-green-dark: #164F37;
-  --alert-amber: #C97A2B;
-  --error-red: #B3261E;
-  --accredited-blue: #2C5F8A;
-  --line: #D8D2C2;
+     trustworthy as the paper result sheet it's standing in for.
+     Brand palette: cyan + deep blue, accented with orange peel. */
+  --ink: #0B1F3F;
+  --ink-soft: #3D5276;
+  --paper: #F6F8FC;
+  --paper-dim: #E7EDF6;
+  --field-green: #0B3D91;       /* deep blue — primary */
+  --field-green-dark: #082C6B;
+  --alert-amber: #FF9F00;       /* orange peel — warning */
+  --error-red: #D32F2F;         /* red — danger */
+  --accredited-blue: #00B4D8;   /* cyan — info/link */
+  --line: #CFDAE8;
+
+  /* Action Alliance brand — a 4-colour working palette:
+     deep blue primary + cyan secondary, accented with orange peel. */
+  --aa-deep: #0B3D91;
+  --aa-deep-dark: #082C6B;
+  --aa-cyan: #00B4D8;
+  --aa-orange: #FF9F00;        /* orange peel */
+  --aa-orange-dark: #E28F00;
+  /* Legacy aliases kept so existing --aa-* references keep working. */
+  --aa-sky: #00B4D8;           /* old "sky blue" now resolves to cyan */
+  --aa-green: #0B3D91;
+  --aa-green-dark: #082C6B;
+  --aa-gold: #FF9F00;
+  --aa-gold-dark: #E28F00;
 
   /* Type */
   --font-display: 'Space Grotesk', system-ui, sans-serif;

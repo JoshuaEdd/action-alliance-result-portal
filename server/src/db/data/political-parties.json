@@ -1,0 +1,23 @@
+[
+  { "name": "Accord", "abbreviation": "A" },
+  { "name": "Action Alliance", "abbreviation": "AA", "isPriority": true },
+  { "name": "Action Democratic Party", "abbreviation": "ADP" },
+  { "name": "Action Peoples Party", "abbreviation": "APP" },
+  { "name": "African Action Congress", "abbreviation": "AAC" },
+  { "name": "African Democratic Congress", "abbreviation": "ADC" },
+  { "name": "All Progressives Congress", "abbreviation": "APC" },
+  { "name": "All Progressives Grand Alliance", "abbreviation": "APGA" },
+  { "name": "Allied Peoples Movement", "abbreviation": "APM" },
+  { "name": "Boot Party", "abbreviation": "BP" },
+  { "name": "Democratic Leadership Alliance", "abbreviation": "DLA" },
+  { "name": "Labour Party", "abbreviation": "LP" },
+  { "name": "National Rescue Movement", "abbreviation": "NRM" },
+  { "name": "New Nigeria Peoples Party", "abbreviation": "NNPP" },
+  { "name": "Nigeria Democratic Congress", "abbreviation": "NDC" },
+  { "name": "Peoples Democratic Party", "abbreviation": "PDP" },
+  { "name": "Peoples Redemption Party", "abbreviation": "PRP" },
+  { "name": "Social Democratic Party", "abbreviation": "SDP" },
+  { "name": "Young Progressives Party", "abbreviation": "YPP" },
+  { "name": "Youth Party", "abbreviation": "YP" },
+  { "name": "Zenith Labour Party", "abbreviation": "ZLP" }
+]

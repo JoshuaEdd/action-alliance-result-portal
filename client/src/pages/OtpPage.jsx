@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Input, Button } from '@heroui/react';
 import { useAuth } from '../context/AuthContext';
+import AaLogo from '../components/AaLogo';
 
 export default function OtpPage() {
   const { verifyOtp } = useAuth();
@@ -20,8 +22,9 @@ export default function OtpPage() {
     setError(null);
     setLoading(true);
     try {
-      await verifyOtp(state.preAuthToken, code);
-      navigate('/submit', { replace: true });
+      const data = await verifyOtp(state.preAuthToken, code);
+      const isAgent = data.user?.role === 'agent';
+      navigate(isAgent ? '/submit' : '/dashboard', { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -30,28 +33,38 @@ export default function OtpPage() {
   };
 
   return (
-    <div className="step-content" style={{ paddingTop: 64 }}>
-      <h1 style={{ fontSize: 24 }}>Enter verification code</h1>
-      <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 32 }}>
+    <div className="max-w-sm mx-auto pt-32 px-4" style={{ paddingTop: '8rem' }}>
+      <div className="flex items-center gap-3 mb-6">
+        <AaLogo size={48} />
+        <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Enter verification code</h1>
+      </div>
+      <p className="text-sm mb-6" style={{ color: 'var(--ink-soft)' }}>
         A 6-digit code was sent to your {state.deliveredTo === 'email' ? 'email' : 'phone'}.
       </p>
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="code">Verification code</label>
-          <input
-            id="code"
-            type="text"
-            inputMode="numeric"
-            maxLength={6}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            required
-          />
-        </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Input
+          label="Verification code"
+          type="text"
+          inputMode="numeric"
+          maxLength={6}
+          value={code}
+          onValueChange={(v) => setCode(v.replace(/\D/g, ''))}
+          isRequired
+          variant="bordered"
+          size="lg"
+          description="Enter the 6-digit code from your email or phone."
+        />
         {error && <p className="error-text">{error}</p>}
-        <button className="btn btn-primary" type="submit" disabled={loading || code.length !== 6} style={{ width: '100%' }}>
+        <Button
+          type="submit"
+          color="primary"
+          fullWidth
+          size="lg"
+          isLoading={loading}
+          isDisabled={code.length !== 6}
+        >
           {loading ? 'Verifying…' : 'Verify & continue'}
-        </button>
+        </Button>
       </form>
     </div>
   );

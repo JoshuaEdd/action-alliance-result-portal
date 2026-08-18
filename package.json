@@ -1,0 +1,13 @@
+{
+  "name": "action-alliance-result-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Action Alliance election result upload portal (single API + role-based web app)",
+  "scripts": {
+    "dev": "node dev.js",
+    "setup": "npm --prefix server run setup",
+    "migrate": "npm --prefix server run migrate",
+    "seed": "npm --prefix server run seed",
+    "create-admin": "npm --prefix server run create-admin"
+  }
+}

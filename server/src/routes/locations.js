@@ -43,4 +43,12 @@ router.get('/my-polling-unit', requireAuth, async (req, res) => {
   res.json(rows[0]);
 });
 
+router.get('/parties', requireAuth, async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, abbreviation, is_priority FROM political_parties
+     ORDER BY is_priority DESC, display_order ASC`
+  );
+  res.json(rows);
+});
+
 export default router;

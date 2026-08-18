@@ -1,11 +1,37 @@
 import bcrypt from 'bcrypt';
+import readline from 'readline/promises';
 import { pool } from '../config/db.js';
 
-// Usage: npm run create-admin -- "Full Name" email@example.com temporaryPassword123
+// Creates the first Chief Administrator account.
+// Usage (all args): npm run create-admin -- "Full Name" email@example.com aPassword
+// Or without args:  npm run create-admin   (prompts for each value)
 async function main() {
-  const [fullName, email, password] = process.argv.slice(2);
+  let [fullName, email, password] = process.argv.slice(2);
+
   if (!fullName || !email || !password) {
-    console.error('Usage: npm run create-admin -- "Full Name" email@example.com temporaryPassword');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q) => rl.question(`${q} `);
+    try {
+      if (!fullName) fullName = (await ask('Full name:')).trim();
+      if (!email) email = (await ask('Email:')).trim();
+      if (!password) password = await ask('Temporary password (min 8 chars):');
+    } finally {
+      rl.close();
+    }
+  }
+
+  if (!fullName || !email || !password) {
+    console.error('Full name, email, and password are all required.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    console.error('That does not look like a valid email address.');
+    process.exitCode = 1;
+    return;
+  }
+  if (password.length < 8) {
+    console.error('Password must be at least 8 characters.');
     process.exitCode = 1;
     return;
   }

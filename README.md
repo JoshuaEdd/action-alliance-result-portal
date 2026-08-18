@@ -13,9 +13,12 @@ admin management), plus the backend both depend on.
 ```
 election-portal/
 ├── server/        Node/Express + PostgreSQL API
-├── client/        React (Vite) — agent-facing wizard, port 5173
-└── admin-client/  React (Vite) — admin dashboard, port 5174
+└── client/        React (Vite) — single merged app (agent + admin, role-based)
 ```
+
+Everything runs on one server/port when `npm run dev` at the root is used:
+`http://localhost:4000/` serves the API and the single web app; after sign-in the
+user's role routes them to the agent submission area or the admin dashboard.
 
 ## Getting it running
 
@@ -26,10 +29,14 @@ createdb election_portal
 cd server
 cp .env.example .env        # edit DATABASE_URL / JWT_SECRET
 npm install
-npm run migrate             # applies src/db/schema.sql
-npm run seed                # loads Ahiazu Ezinihitte Federal Constituency data
+npm run setup               # idempotent migrate + seed in one command
 npm run create-admin -- "Your Name" you@example.com aTemporaryPassword
 ```
+
+`npm run setup` is a convenience that runs `npm run migrate` (safe to
+re-apply — every object is created `IF NOT EXISTS` and later additions like
+`users.deleted_at` are applied via guarded `ALTER`) followed by `npm run
+seed`. Both are idempotent, so re-running never corrupts existing data.
 
 `npm run seed` loads real data for **Ahiazu Ezinihitte Federal
 Constituency**: 2 local governments, 24 wards, 265 polling units
@@ -49,10 +56,10 @@ bootstrapped this way).
 **Getting agents onto the system** now goes through self-registration with
 an invite code, not manual DB inserts:
 1. As an admin, open a polling unit that has no agent yet
-   (`/polling-unit/:id` in the admin app) and click **Generate code** under
+   (`/polling-unit/:id` in the admin area) and click **Generate code** under
    "Agent invite codes."
 2. Give that code to the real agent for that PU.
-3. The agent visits the agent app's `/register` page, enters the code
+3. The agent visits `/register` in the same web app, enters the code
    along with their name/contact/password — this creates their account
    *and* permanently assigns + locks them to that polling unit
    (`server/src/routes/auth.js`'s `/register` route).
@@ -64,29 +71,26 @@ A PU that already has an agent can't have a new code generated for it
 (enforced both in the API and via a DB-level unique index, so a race
 between two codes for the same PU can't both succeed).
 
-### 2. API
+### 2. API + web app (single server)
+
+The API, agent wizard, and admin dashboard are one app served from one port.
 
 ```bash
+# at the repo root
 npm run dev      # http://localhost:4000
 ```
 
-### 3. Client (agent app)
+With just that one command you get the API **and** the merged web app:
+- `npm install` at the root (root `dev` script runs `server` and `client` together).
+- Sign in with the **Chief Admin** account created above — the same login also
+  shows the agent-submission area for agent-role users, routed automatically by role.
+
+To run production-like (built assets, no Vite dev server):
 
 ```bash
-cd ../client
-npm install
-npm run dev       # http://localhost:5173
+cd ../client && npm run build
+cd ../server && npm start      # uses the built client/dist, NODE_ENV=production
 ```
-
-### 4. Admin client
-
-```bash
-cd ../admin-client
-npm install
-npm run dev       # http://localhost:5174
-```
-
-Sign in with the Chief Admin account created above.
 
 ## What's implemented vs. the SRS
 
@@ -94,6 +98,7 @@ Sign in with the Chief Admin account created above.
 |---|---|
 | §3.1 Authentication (FR-1.1–1.5) | Done — password + 2FA OTP, lockout, session timeout, plus invite-code self-registration for agents (vets which polling unit they can claim) |
 | §3.2 Submission wizard (FR-2.1–2.14) | Done — 5-step wizard, live-camera-only capture, GPS+timestamp, offline queue via IndexedDB, local draft autosave |
+| Multi-party results (per request, beyond original SRS) | Done — all 21 INEC-approved parties on the result sheet, Action Alliance pinned first/highlighted throughout (`is_priority` flag, not hardcoded); `total_valid_votes`/`total_votes` are now *derived* from the sum of per-party entries rather than separately typed, matching how a real result sheet works; admin dashboard/LGA/ward/PU pages all show a leading-party declaration plus a collapsible full party breakdown |
 | §4 Admin portal (FR-3, FR-4) | Done — dashboard summary, LGA/ward/PU drill-down with breadcrumbs, quick search, CSV + PDF export, near-real-time polling refresh (15s) |
 | §5 Non-functional | Mobile-first layout on the agent app addresses NFR-1; offline queueing on the agent side |
 | §6.1 Input integrity (SEC-1, SEC-2) | Done server-side (Zod + DB CHECK constraints), independent of client validation |
