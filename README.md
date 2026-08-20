@@ -1,139 +1,268 @@
 # Election Result Upload Portal — Action Alliance
 
-Internal record-keeping tool for polling-unit agents and administrators.
-Not voter-facing; no voting or registration functionality (see SRS §1, §7).
+Internal record-keeping tool for Action Alliance polling-unit agents and administrators.  
+Designed for trustworthy, tamper-evident result capture and real-time constituency collation.
 
-This pass builds both portals end-to-end: the **Agent Submission Portal**
-(auth → multi-step wizard → offline-tolerant submit) and the
-**Administrator Portal** (dashboard → drill-down → correction workflow →
-admin management), plus the backend both depend on.
+---
 
-## Structure
+## Table of Contents
+- [Architecture Overview](#architecture-overview)
+- [Project Directory Structure](#project-directory-structure)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+  - [1. Prerequisites & Environment](#1-prerequisites--environment)
+  - [2. Database Setup](#2-database-setup)
+  - [3. Running in Development](#3-running-in-development)
+  - [4. Production Build](#4-production-build)
+- [User Roles & Access Control](#user-roles--access-control)
+- [Key Workflows & Features](#key-workflows--features)
+  - [Agent Submission Flow](#agent-submission-flow)
+  - [Administrator Dashboard & Collation](#administrator-dashboard--collation)
+  - [Correction Review Workflow](#correction-review-workflow)
+- [Specification Compliance](#specification-compliance)
+
+---
+
+## Architecture Overview
+
+The system is delivered as a unified monorepo consisting of:
+- **Backend API (`server/`)**: Node.js/Express + PostgreSQL with JWT authentication, role authorization, audit logging, file upload handling, and PDF/Excel export generators.
+- **Frontend Single-Page App (`client/`)**: React 19 with Vite 5, Tailwind CSS 4, HeroUI, Poppins typography, and client-side offline queueing.
+- **Root Runner (`dev.js`)**: Spawns both API and client concurrently on a single unified entry point (`http://localhost:4000`).
 
 ```
-election-portal/
-├── server/        Node/Express + PostgreSQL API
-└── client/        React (Vite) — single merged app (agent + admin, role-based)
+action-alliance-result-portal/
+├── client/        # React 19 + Vite 5 + Tailwind CSS 4 + HeroUI
+├── server/        # Node.js + Express + PostgreSQL
+├── dev.js         # Concurrent development server orchestrator
+└── README.md      # Project documentation
 ```
 
-Everything runs on one server/port when `npm run dev` at the root is used:
-`http://localhost:4000/` serves the API and the single web app; after sign-in the
-user's role routes them to the agent submission area or the admin dashboard.
+---
 
-## Getting it running
+## Project Directory Structure
 
-### 1. Database
-
-```bash
-createdb election_portal
-cd server
-cp .env.example .env        # edit DATABASE_URL / JWT_SECRET
-npm install
-npm run setup               # idempotent migrate + seed in one command
-npm run create-admin -- "Your Name" you@example.com aTemporaryPassword
+```
+action-alliance-result-portal/
+├── client/                                 # Frontend Web Application
+│   ├── public/
+│   │   └── aa-logo.png                     # Action Alliance emblem asset
+│   ├── src/
+│   │   ├── admin/                          # Administrator Portal
+│   │   │   ├── components/
+│   │   │   │   ├── Breadcrumbs.jsx         # Accessible breadcrumbs (Home + Back + HeroUI trail)
+│   │   │   │   ├── ErrorBoundary.jsx       # Catch-all error boundary
+│   │   │   │   ├── InviteCodesPanel.jsx    # Single PU agent invite code generator
+│   │   │   │   ├── Layout.jsx              # Fixed static sidebar + scrollable admin layout
+│   │   │   │   ├── MassInviteCodesButton.jsx # Bulk invite code generation (LGA/Ward scope)
+│   │   │   │   └── PartyResultsPanel.jsx   # Leading party declaration & 21-party breakdown
+│   │   │   └── pages/
+│   │   │       ├── AdminsPage.jsx          # Admin account management & role assignment
+│   │   │       ├── CorrectionsPage.jsx     # Multi-admin correction request review queue
+│   │   │       ├── DashboardPage.jsx       # Constituency overview, search, stats, LGA list
+│   │   │       ├── LgaPage.jsx             # LGA level drill-down and ward collation
+│   │   │       ├── PollingUnitPage.jsx     # PU details, photo inspection, and PDF export
+│   │   │       └── WardPage.jsx            # Ward level drill-down, PU table, PDF/XLSX export
+│   │   ├── agent/                          # Polling Unit Agent Portal
+│   │   │   ├── components/
+│   │   │   │   ├── ActionBar.jsx           # Thumb-friendly bottom sticky action bar
+│   │   │   │   ├── CameraCapture.jsx       # Live camera capture with GPS/timestamp overlay
+│   │   │   │   ├── ProgressBar.jsx         # 5-step wizard progress indicator
+│   │   │   │   └── steps/
+│   │   │   │       ├── LocationStep.jsx    # Step 1: Assigned polling unit confirmation
+│   │   │   │       ├── VoteCountsStep.jsx  # Step 2: Paper-ledger tally entry for 21 parties
+│   │   │   │       ├── AgentDetailsStep.jsx# Step 3: Agent identity confirmation
+│   │   │   │       ├── PhotoCaptureStep.jsx# Step 4: 3-photo camera capture (tag, sheet, agent)
+│   │   │   │       └── PreviewStep.jsx     # Step 5: Final review before submission
+│   │   │   ├── context/
+│   │   │   │   └── SubmissionContext.jsx   # Multi-step state, autosave, offline submission
+│   │   │   └── pages/
+│   │   │       ├── ConfirmationPage.jsx    # Post-submission reference receipt
+│   │   │       ├── RegisterPage.jsx        # Agent self-registration with invite code
+│   │   │       └── WizardPage.jsx          # Submission wizard step container
+│   │   ├── api/
+│   │   │   ├── client.js                   # Authenticated API request client
+│   │   │   └── offlineQueue.js             # IndexedDB queue & auto-sync on reconnect
+│   │   ├── app/
+│   │   │   └── router.jsx                  # React Router with role-based AuthGuard
+│   │   ├── components/
+│   │   │   ├── AaLogo.jsx                  # Scalable Action Alliance brand logo
+│   │   │   └── SearchField.jsx             # Reusable HeroUI SearchField with action button
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx             # Session, token persistence, 2FA OTP state
+│   │   ├── pages/
+│   │   │   ├── LoginPage.jsx               # Email/phone + password authentication
+│   │   │   └── OtpPage.jsx                 # 2FA 6-digit verification code screen
+│   │   ├── styles/
+│   │   │   ├── admin.css                   # Admin layout (fixed sidebar, sticky headers, tables)
+│   │   │   ├── global.css                  # Mobile-first agent styles (ledger, action bar)
+│   │   │   └── tokens.css                  # Color palette, Poppins typography, spacing tokens
+│   │   ├── index.css                       # Tailwind CSS 4 theme + HeroUI + caret rules
+│   │   └── main.jsx                        # React root entry point
+│   ├── index.html                          # HTML template (Google Fonts Poppins & IBM Plex Mono)
+│   ├── package.json
+│   └── vite.config.js
+├── server/                                 # Backend API Server
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── db.js                       # PostgreSQL connection pool configuration
+│   │   ├── db/
+│   │   │   ├── data/
+│   │   │   │   ├── ahiazu-constituency.json # Ahiazu Ezinihitte LGA/ward/PU hierarchy
+│   │   │   │   └── political-parties.json  # 21 INEC-approved political parties list
+│   │   │   ├── create-admin.js             # Chief Admin bootstrap script
+│   │   │   ├── migrate.js                  # Idempotent database schema migration runner
+│   │   │   ├── schema.sql                  # PostgreSQL schema, constraints, audit logs
+│   │   │   └── seed.js                     # Idempotent seed script for constituency & parties
+│   │   ├── middleware/
+│   │   │   ├── audit.js                    # Admin action audit logger
+│   │   │   ├── auth.js                     # JWT verification & role authorization middleware
+│   │   │   ├── upload.js                   # Multer storage configuration for result photos
+│   │   │   └── validateSubmission.js       # Zod validation schema for result submissions
+│   │   ├── routes/
+│   │   │   ├── admin.js                    # Admin routes (dashboard, hierarchy, exports, users)
+│   │   │   ├── auth.js                     # Auth routes (login, 2FA verify, register)
+│   │   │   ├── locations.js                # Constituency hierarchy lookup
+│   │   │   └── submissions.js              # Agent result submission ingest & photo upload
+│   │   ├── utils/
+│   │   │   └── otp.js                      # 6-digit OTP generation and delivery helper
+│   │   └── index.js                        # Express server entry point
+│   ├── uploads/                            # Stored result photos directory
+│   ├── package.json
+│   └── .env.example
+├── dev.js                                  # Local development runner
+├── package.json                            # Root scripts
+└── README.md                               # Project documentation
 ```
 
-`npm run setup` is a convenience that runs `npm run migrate` (safe to
-re-apply — every object is created `IF NOT EXISTS` and later additions like
-`users.deleted_at` are applied via guarded `ALTER`) followed by `npm run
-seed`. Both are idempotent, so re-running never corrupts existing data.
+---
 
-`npm run seed` loads real data for **Ahiazu Ezinihitte Federal
-Constituency**: 2 local governments, 24 wards, 265 polling units
-(`server/src/db/data/ahiazu-constituency.json`). The source list gives PU
-and ward *names* only, no official codes, so `seed.js` generates ordered
-`ward_number` / `pu_number` values (e.g. ward `01`, PU `001`) matching the
-order they appear in the source document — swap in real INEC codes later
-if they become available; the uniqueness constraints don't care what the
-values are, only that they're unique. The script is idempotent — safe to
-re-run.
+## Tech Stack
 
-`npm run create-admin` creates the first `chief_admin` account so you can
-actually sign into the admin portal (its own account-creation UI requires
-being logged in as a Chief Admin already, so the very first one has to be
-bootstrapped this way).
-
-**Getting agents onto the system** now goes through self-registration with
-an invite code, not manual DB inserts:
-1. As an admin, open a polling unit that has no agent yet
-   (`/polling-unit/:id` in the admin area) and click **Generate code** under
-   "Agent invite codes."
-2. Give that code to the real agent for that PU.
-3. The agent visits `/register` in the same web app, enters the code
-   along with their name/contact/password — this creates their account
-   *and* permanently assigns + locks them to that polling unit
-   (`server/src/routes/auth.js`'s `/register` route).
-
-A code is single-use and tied to one specific polling unit, so registering
-doesn't let someone claim just any PU — that's the whole point of routing
-account creation through admin-issued codes rather than leaving it open.
-A PU that already has an agent can't have a new code generated for it
-(enforced both in the API and via a DB-level unique index, so a race
-between two codes for the same PU can't both succeed).
-
-### 2. API + web app (single server)
-
-The API, agent wizard, and admin dashboard are one app served from one port.
-
-```bash
-# at the repo root
-npm run dev      # http://localhost:4000
-```
-
-With just that one command you get the API **and** the merged web app:
-- `npm install` at the root (root `dev` script runs `server` and `client` together).
-- Sign in with the **Chief Admin** account created above — the same login also
-  shows the agent-submission area for agent-role users, routed automatically by role.
-
-To run production-like (built assets, no Vite dev server):
-
-```bash
-cd ../client && npm run build
-cd ../server && npm start      # uses the built client/dist, NODE_ENV=production
-```
-
-## What's implemented vs. the SRS
-
-| Section | Status |
+| Layer | Technologies |
 |---|---|
-| §3.1 Authentication (FR-1.1–1.5) | Done — password + 2FA OTP, lockout, session timeout, plus invite-code self-registration for agents (vets which polling unit they can claim) |
-| §3.2 Submission wizard (FR-2.1–2.14) | Done — 5-step wizard, live-camera-only capture, GPS+timestamp, offline queue via IndexedDB, local draft autosave |
-| Multi-party results (per request, beyond original SRS) | Done — all 21 INEC-approved parties on the result sheet, Action Alliance pinned first/highlighted throughout (`is_priority` flag, not hardcoded); `total_valid_votes`/`total_votes` are now *derived* from the sum of per-party entries rather than separately typed, matching how a real result sheet works; admin dashboard/LGA/ward/PU pages all show a leading-party declaration plus a collapsible full party breakdown |
-| §4 Admin portal (FR-3, FR-4) | Done — dashboard summary, LGA/ward/PU drill-down with breadcrumbs, quick search, CSV + PDF export, near-real-time polling refresh (15s) |
-| §5 Non-functional | Mobile-first layout on the agent app addresses NFR-1; offline queueing on the agent side |
-| §6.1 Input integrity (SEC-1, SEC-2) | Done server-side (Zod + DB CHECK constraints), independent of client validation |
-| §6.1 Immutability (SEC-3) | Done — no update/delete route exists; `correction_requests`/`correction_approvals` tables back a real approval workflow, exposed via `/admin/correction-requests` and the Corrections page |
-| §6.1 Duplicate detection (SEC-5) | Done — partial unique index on `polling_unit_id`; a second submission returns 409 rather than overwriting |
-| §6.2 Facial match (SEC-6) | Explicitly deferred per the SRS note ("ignore for now") |
-| §6.2 GPS geofence (SEC-7) | Done — flags rather than rejects, via `isOutsideRadius`, surfaced as a badge in the admin UI |
-| §6.3 File upload handling (SEC-8, SEC-9) | Type/size validated via multer; non-executable storage dir; `scanFile` is a placeholder — wire to ClamAV or a cloud AV API before production |
-| §6.4 Audit log (SEC-11) | Done — every admin GET/POST/PATCH under `/api/admin` is logged via the `audit()` middleware wrapper |
-| §6.4/6.5 Permission matrix (SEC-10) | Done — role checks (`limited_admin` / `verifying_admin` / `chief_admin`) gate corrections decisions and admin-account management; optional per-LGA `scope_local_government_id` restricts a scoped admin's dashboard |
-| §6.5 Transport/storage encryption (SEC-13, SEC-14) | TLS is a deployment concern (put this behind HTTPS); at-rest encryption depends on hosting choice (e.g. managed Postgres with encryption at rest) |
+| **Frontend Framework** | React 19, Vite 5, React Router 6 |
+| **UI Components & Styles** | Tailwind CSS 4, HeroUI v3, Custom CSS Variables |
+| **Typography** | Poppins (Full weight variations: 100–900 + italics), IBM Plex Mono |
+| **Client Storage** | IndexedDB (Offline Submission Queue), `localStorage` (Drafts & Session) |
+| **Backend Runtime** | Node.js (ES Modules), Express 4 |
+| **Database** | PostgreSQL with `pg` connection pool |
+| **Security & Auth** | JWT, bcrypt, 2FA OTP, Helmet, Express Rate Limit, Zod validation |
+| **Document Generation**| PDFKit (PDF ward/PU reports), ExcelJS (XLSX export spreadsheets) |
 
-## Design notes
+---
 
-Palette and type are described in-line in `client/src/styles/tokens.css`
-(shared by `admin-client`). The vote-count entry screen (`VoteCountsStep`)
-is deliberately styled as a ledger/tally sheet — bordered rows, monospace
-digits — to visually mirror the paper result sheet the agent is
-simultaneously photographing. The admin app reuses the same palette in a
-denser, desktop-oriented sidebar + table layout suited to review work.
+## Getting Started
 
-## Next steps
+### 1. Prerequisites & Environment
+- **Node.js**: v18.0.0 or higher
+- **PostgreSQL**: v14.0 or higher
 
-1. ~~Seed real LGA/ward/PU data~~ — done (`npm run seed`, see above). Swap
-   generated ward/PU numbers for official INEC codes if/when available.
-2. Replace `deliverOtp` and `scanFile` placeholders with real providers (SMS/email, AV scanning).
-3. Decide on a superseding-record strategy for *applying* an approved
-   correction without mutating the original row (the workflow up to
-   approval is built; applying the change is flagged as a TODO in
-   `routes/admin.js`).
-4. Add authenticated photo serving (currently `submission_photos.storage_path`
-   is stored but not exposed over HTTP — intentional until access control
-   for raw images is designed).
-5. Decide on photo persistence for the agent app's offline queue across a
-   full app/process kill — currently in-memory until the HTTP POST succeeds
-   or IndexedDB enqueue happens.
-6. Production hardening: HTTPS, secrets management, DB role with
-   `REVOKE UPDATE, DELETE` on append-only tables (see bottom of `schema.sql`).
+Create your environment configuration:
+```bash
+cd server
+cp .env.example .env
+```
+Update `.env` with your PostgreSQL database credentials and JWT secret:
+```ini
+PORT=4000
+DATABASE_URL=postgres://postgres:password@localhost:5432/election_portal
+JWT_SECRET=your_secure_jwt_secret_key_here
+```
+
+### 2. Database Setup
+Create the database, apply schema migrations, and seed initial constituency and political parties data:
+
+```bash
+# Create the PostgreSQL database
+createdb election_portal
+
+# From repository root (or inside server/):
+npm run setup
+
+# Bootstrap the initial Chief Admin account:
+npm run create-admin -- "Chief Admin" admin@actionalliance.org StrongPassword123!
+```
+
+- **`npm run setup`**: Executes `migrate.js` (creates relational tables, indexes, constraints, and audit log triggers) followed by `seed.js` (loads the 2 LGAs, 24 Wards, and 265 Polling Units of Ahiazu Ezinihitte Federal Constituency, plus all 21 INEC-approved political parties). Both scripts are idempotent.
+
+### 3. Running in Development
+Start both the Express backend API and the Vite frontend simultaneously:
+
+```bash
+# At the repository root
+npm run dev
+```
+
+Visit **`http://localhost:4000`** in your browser.
+- Logging in as an **Admin** automatically routes to the **Admin Dashboard** (`/dashboard`).
+- Logging in as a **Polling Unit Agent** automatically routes to the **Agent Submission Wizard** (`/submit`).
+
+### 4. Production Build
+To create an optimized production build:
+
+```bash
+# 1. Build frontend assets
+cd client
+npm run build
+
+# 2. Start production server
+cd ../server
+NODE_ENV=production npm start
+```
+
+---
+
+## User Roles & Access Control
+
+| Role | Access Scope | Capabilities |
+|---|---|---|
+| **Agent (`agent`)** | Assigned Polling Unit | Complete 5-step result submission wizard, photo upload, local draft autosave, offline submission queue. |
+| **Limited Admin (`limited_admin`)** | Constituency or Scoped LGA | View dashboard collation summaries, inspect polling unit details/photos, export PDF/Excel reports. |
+| **Verifying Admin (`verifying_admin`)** | Constituency | All Limited Admin permissions + vote on and decide correction requests. |
+| **Chief Admin (`chief_admin`)** | Full System | All Verifying Admin permissions + create/manage admin accounts and generate PU invite codes. |
+
+### Agent Onboarding via Single-Use Invite Codes
+Agents do not register openly or through manual database edits:
+1. An admin opens a polling unit without an agent (`/polling-unit/:id`) and clicks **Generate Code** (or uses **Mass Invite Codes** at the LGA/Ward level).
+2. The agent navigates to `/register`, enters the invite code, full name, phone/email, and password.
+3. Upon registration, the invite code is consumed and the agent account is permanently locked to that specific polling unit.
+
+---
+
+## Key Workflows & Features
+
+### Agent Submission Flow
+1. **Location Confirmation**: Displays verified Polling Unit, Ward, and LGA assigned to the agent.
+2. **Vote Counts Entry**: Paper-ledger-style tally sheet for all 21 INEC political parties. Action Alliance is pinned first. Total votes are automatically calculated and cross-verified.
+3. **Agent Details**: Confirmation of agent identity and credentials.
+4. **Photo Capture**: Live-camera-only capture (camera stream directly watermarked with timestamp + geolocation) for:
+   - Agent Tag / Accreditation
+   - Official Result Sheet (Form EC8A)
+   - Agent Portrait / Passport
+5. **Preview & Sign-Off**: Verification step before generating an immutable submission receipt and reference number.
+
+### Offline Resilience
+- If network connection drops in the field, submissions are queued securely in **IndexedDB** (`client/src/api/offlineQueue.js`) and automatically retried when connectivity is restored.
+
+### Administrator Dashboard & Collation
+- **Static Sidebar**: Pinned navigation layout with active indicators and user status always in view.
+- **Sticky Breadcrumb & Heading Bar**: Pinned navigation header allowing one-click traversal (`Constituency → LGA → Ward → Polling Unit`).
+- **Live Search**: Instant lookup for Local Governments, Wards, and Polling Units.
+- **Real-Time Polling**: Auto-refreshes collation data every 15 seconds without manual page reloads.
+- **Exports**: Instant generation of official PDF summaries and Excel (`.xlsx`) datasets.
+
+---
+
+## Specification Compliance
+
+| Requirement | Description | Implementation Details |
+|---|---|---|
+| **FR-1: Authentication** | Password + 2FA OTP, rate limiting, session timeout | `server/src/routes/auth.js`, `client/src/context/AuthContext.jsx` |
+| **FR-2: Result Submission** | 5-step wizard, live camera capture, watermarks | `client/src/agent/`, `server/src/routes/submissions.js` |
+| **FR-3 & FR-4: Admin Collation** | Real-time totals, drill-down, search, PDF/Excel export | `client/src/admin/`, `server/src/routes/admin.js` |
+| **SEC-1 & SEC-2: Input Integrity** | Strict schema validation, DB check constraints | Zod schemas in `validateSubmission.js`, PostgreSQL constraints |
+| **SEC-3 & SEC-5: Immutability** | Append-only result submissions, duplicate protection | Unique constraint on `polling_unit_id`, multi-admin correction requests |
+| **SEC-7: Geofencing** | Distance calculation against PU coordinates | Flags out-of-radius submissions with GPS badges in admin portal |
+| **SEC-11: Audit Trail** | Comprehensive audit logging of admin actions | `server/src/middleware/audit.js` writing to `audit_logs` table |
+| **UI Standards** | Poppins font family, caret suppression, mobile-first | `client/src/styles/`, `tokens.css`, `index.css` |
