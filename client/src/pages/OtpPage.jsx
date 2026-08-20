@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Input, Button } from '@heroui/react';
 import { useAuth } from '../context/AuthContext';
+import AaLogo from '../components/AaLogo';
 
 export default function OtpPage() {
   const { verifyOtp } = useAuth();
@@ -20,8 +22,9 @@ export default function OtpPage() {
     setError(null);
     setLoading(true);
     try {
-      await verifyOtp(state.preAuthToken, code);
-      navigate('/submit', { replace: true });
+      const data = await verifyOtp(state.preAuthToken, code);
+      const isAgent = data.user?.role === 'agent';
+      navigate(isAgent ? '/submit' : '/dashboard', { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -30,29 +33,38 @@ export default function OtpPage() {
   };
 
   return (
-    <div className="step-content" style={{ paddingTop: 64 }}>
-      <h1 style={{ fontSize: 24 }}>Enter verification code</h1>
-      <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 32 }}>
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+      <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-black/5 p-6 pt-8 flex flex-col gap-5">
+        <div className="flex items-center gap-3">
+          <AaLogo size={48} />
+          <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Enter verification code</h1>
+        </div>
+      <p className="text-sm text-[var(--muted)]">
         A 6-digit code was sent to your {state.deliveredTo === 'email' ? 'email' : 'phone'}.
       </p>
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="code">Verification code</label>
-          <input
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div>
+          <label htmlFor="code" className="block text-sm font-medium mb-1.5">
+            Verification code
+          </label>
+          <Input
             id="code"
             type="text"
             inputMode="numeric"
             maxLength={6}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="6-digit code"
             required
+            fullWidth
           />
         </div>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn btn-primary" type="submit" disabled={loading || code.length !== 6} style={{ width: '100%' }}>
+        <Button type="submit" variant="primary" fullWidth isDisabled={loading || code.length !== 6}>
           {loading ? 'Verifying…' : 'Verify & continue'}
-        </button>
+        </Button>
       </form>
+      </div>
     </div>
   );
 }

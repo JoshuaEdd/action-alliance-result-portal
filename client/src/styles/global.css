@@ -1,6 +1,16 @@
 @import './tokens.css';
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  caret-color: transparent;
+}
+
+input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: auto;
+}
 
 html, body, #root {
   height: 100%;
@@ -23,6 +33,7 @@ h1, h2, h3 {
 button {
   font-family: var(--font-body);
   font-weight: 600;
+  user-select: none;
 }
 
 .app-shell {
@@ -32,14 +43,12 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--paper);
-  border-left: 1px solid var(--line);
-  border-right: 1px solid var(--line);
 }
 
 /* ── Progress bar ─────────────────────────────── */
 .progress-bar {
   padding: var(--step-16) var(--step-16) var(--step-12);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--accredited-blue);
   position: sticky;
   top: 0;
   background: var(--paper);
@@ -98,8 +107,9 @@ button {
 }
 .field select:focus,
 .field input:focus {
-  outline: 2px solid var(--accredited-blue);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accredited-blue);
+  box-shadow: 0 0 0 3px rgba(0,180,216,0.25);
 }
 .field .error-text {
   color: var(--error-red);
@@ -158,7 +168,7 @@ button {
   gap: var(--step-12);
   padding: var(--step-12) var(--step-16) calc(var(--step-12) + env(safe-area-inset-bottom));
   background: var(--paper);
-  border-top: 1px solid var(--line);
+  border-top: 2px solid var(--accredited-blue);
 }
 .btn {
   min-height: var(--tap-target);
@@ -166,22 +176,26 @@ button {
   border: none;
   font-size: 15px;
   cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .btn-primary {
   flex: 1;
-  background: var(--field-green);
+  background: var(--aa-orange);
   color: #fff;
 }
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
 .btn-primary:disabled {
   background: var(--line);
   color: var(--ink-soft);
   cursor: not-allowed;
 }
 .btn-secondary {
-  flex: 0 0 96px;
-  background: transparent;
-  border: 1.5px solid var(--ink);
-  color: var(--ink);
+  flex: 0 0 auto;
+  background: var(--aa-deep);
+  color: #fff;
+  border: none;
+  padding: 0 14px;
 }
 
 /* ── Status pill ──────────────────────────────── */
@@ -195,10 +209,11 @@ button {
   border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  user-select: none;
 }
-.status-pill.pending { background: #F5E6D3; color: var(--alert-amber); }
-.status-pill.submitted { background: #DCEEE4; color: var(--field-green-dark); }
-.status-pill.flagged { background: #F6DAD8; color: var(--error-red); }
+.status-pill.pending { background: #FBE3D3; color: var(--alert-amber); }
+.status-pill.submitted { background: #DCE6F5; color: var(--field-green-dark); }
+.status-pill.flagged { background: #F3DADB; color: var(--error-red); }
 
 .reference-number {
   font-family: var(--font-mono);
@@ -211,7 +226,7 @@ button {
   position: relative;
   border-radius: var(--radius);
   overflow: hidden;
-  border: 1.5px solid var(--line);
+  border: 2px solid var(--accredited-blue);
   background: #000;
   aspect-ratio: 3/4;
 }

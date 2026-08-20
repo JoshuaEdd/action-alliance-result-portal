@@ -18,10 +18,22 @@ function pad(n, width) {
 async function seed() {
   const raw = fs.readFileSync(path.join(__dirname, 'data/ahiazu-constituency.json'), 'utf8');
   const { localGovernments } = JSON.parse(raw);
+  const parties = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/political-parties.json'), 'utf8'));
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Political parties — idempotent, order in the source file = display_order
+    for (let i = 0; i < parties.length; i++) {
+      const p = parties[i];
+      await client.query(
+        `INSERT INTO political_parties (name, abbreviation, is_priority, display_order)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (abbreviation) DO UPDATE SET name = EXCLUDED.name, is_priority = EXCLUDED.is_priority, display_order = EXCLUDED.display_order`,
+        [p.name, p.abbreviation, !!p.isPriority, i]
+      );
+    }
 
     const lgaIds = new Map(); // name -> id
     const lgaWardCounters = new Map(); // lga name -> next ward number
@@ -70,7 +82,7 @@ async function seed() {
     }
 
     await client.query('COMMIT');
-    console.log(`Seeded ${lgaIds.size} local government(s), ${wardCount} ward(s), ${puCount} polling unit(s).`);
+    console.log(`Seeded ${parties.length} political part(y/ies), ${lgaIds.size} local government(s), ${wardCount} ward(s), ${puCount} polling unit(s).`);
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Seed failed:', err.message);

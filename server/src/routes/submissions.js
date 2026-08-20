@@ -42,6 +42,15 @@ router.post(
       if (!scan.clean) return res.status(422).json({ error: 'A file failed the security scan' });
     }
 
+    const partyIds = d.partyVotes.map((p) => p.partyId);
+    const { rows: knownParties } = await pool.query(
+      `SELECT id FROM political_parties WHERE id = ANY($1::uuid[])`,
+      [partyIds]
+    );
+    if (knownParties.length !== partyIds.length) {
+      return res.status(422).json({ error: 'One or more parties in partyVotes were not recognized' });
+    }
+
     // SEC-7 — flag, don't reject, if capture point is far from the PU's registered coordinates
     const { rows: puRows } = await pool.query(
       `SELECT registered_lat, registered_lng FROM polling_units WHERE id = $1`,
@@ -97,6 +106,13 @@ router.post(
           `INSERT INTO submission_photos (submission_id, photo_type, storage_path, mime_type, size_bytes)
            VALUES ($1, $2, $3, $4, $5)`,
           [submission.id, photoType, file.path, file.mimetype, file.size]
+        );
+      }
+
+      for (const p of d.partyVotes) {
+        await client.query(
+          `INSERT INTO submission_party_votes (submission_id, party_id, votes) VALUES ($1, $2, $3)`,
+          [submission.id, p.partyId, p.votes]
         );
       }
 

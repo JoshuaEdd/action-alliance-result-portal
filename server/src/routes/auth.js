@@ -19,6 +19,84 @@ const loginLimiter = rateLimit({
 const LOCKOUT_MINUTES = Number(process.env.LOGIN_LOCKOUT_MINUTES || 15);
 const MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 5);
+const NG_PHONE = /^(\+234|0)[789][01]\d{8}$/;
+
+// Agent self-registration — an invite code is the vetting step: it's
+// issued by an admin for one specific polling unit, so registering
+// doesn't let anyone claim just any PU (see SEC-10-adjacent reasoning
+// in routes/admin.js's invite-codes routes).
+router.post('/register', loginLimiter, async (req, res) => {
+  const { inviteCode, fullName, identifier, password } = req.body;
+  if (!inviteCode || !fullName || !identifier || !password) {
+    return res.status(400).json({ error: 'inviteCode, fullName, identifier, and password are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  const isEmail = identifier.includes('@');
+  if (!isEmail && !NG_PHONE.test(identifier)) {
+    return res.status(400).json({ error: 'Enter a valid email or Nigerian phone number' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Lock the code row for the duration of this transaction so two
+    // simultaneous registrations can't both succeed with the same code.
+    const { rows: codeRows } = await client.query(
+      `SELECT * FROM invite_codes WHERE code = $1 FOR UPDATE`,
+      [inviteCode.trim().toUpperCase()]
+    );
+    const invite = codeRows[0];
+
+    if (!invite) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Invite code not recognized' });
+    }
+    if (invite.used_by) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This invite code has already been used' });
+    }
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      await client.query('ROLLBACK');
+      return res.status(410).json({ error: 'This invite code has expired' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { rows: userRows } = await client.query(
+      `INSERT INTO users (role, full_name, email, phone_number, password_hash, assigned_polling_unit_id, location_locked)
+       VALUES ('agent', $1, $2, $3, $4, $5, TRUE)
+       RETURNING id`,
+      [
+        fullName,
+        isEmail ? identifier : null,
+        isEmail ? null : identifier,
+        passwordHash,
+        invite.polling_unit_id,
+      ]
+    );
+    const newUserId = userRows[0].id;
+
+    await client.query(
+      `UPDATE invite_codes SET used_by = $1, used_at = now() WHERE id = $2`,
+      [newUserId, invite.id]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Account created — you can now sign in.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    // Duplicate email/phone, or the one-agent-per-PU race we guard against
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'An account already exists for that email/phone, or this polling unit already has an agent' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Could not create account, please retry' });
+  } finally {
+    client.release();
+  }
+});
 
 // STEP 1 — verify identifier + password, issue OTP (FR-1.1, FR-1.3)
 router.post('/login/password', loginLimiter, async (req, res) => {
@@ -28,7 +106,7 @@ router.post('/login/password', loginLimiter, async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT * FROM users WHERE (email = $1 OR phone_number = $1) AND is_active = TRUE`,
+    `SELECT * FROM users WHERE (email = $1 OR phone_number = $1) AND is_active = TRUE AND deleted_at IS NULL`,
     [identifier]
   );
   const user = rows[0];

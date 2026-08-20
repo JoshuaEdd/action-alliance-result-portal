@@ -25,4 +25,30 @@ router.get('/wards/:wardId/polling-units', requireAuth, async (req, res) => {
   res.json(rows);
 });
 
+// FR-2.1/2.2 — an agent's PU is fixed at registration time (via invite
+// code) now, so the wizard just needs to display it, not let it be re-picked.
+router.get('/my-polling-unit', requireAuth, async (req, res) => {
+  if (!req.user.assignedPollingUnitId) {
+    return res.status(404).json({ error: 'No polling unit assigned to this account' });
+  }
+  const { rows } = await pool.query(
+    `SELECT pu.id, pu.name, pu.pu_number, w.name AS ward_name, lg.name AS lga_name
+     FROM polling_units pu
+     JOIN wards w ON w.id = pu.ward_id
+     JOIN local_governments lg ON lg.id = w.local_government_id
+     WHERE pu.id = $1`,
+    [req.user.assignedPollingUnitId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Assigned polling unit not found' });
+  res.json(rows[0]);
+});
+
+router.get('/parties', requireAuth, async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, abbreviation, is_priority FROM political_parties
+     ORDER BY is_priority DESC, display_order ASC`
+  );
+  res.json(rows);
+});
+
 export default router;

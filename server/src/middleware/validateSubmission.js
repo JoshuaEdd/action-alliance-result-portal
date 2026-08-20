@@ -2,25 +2,56 @@ import { z } from 'zod';
 
 const nigerianPhone = /^(\+234|0)[789][01]\d{8}$/;
 
+const partyVoteEntry = z.object({
+  partyId: z.string().uuid(),
+  votes: z.coerce.number().int().min(0),
+});
+
+// partyVotes arrives as a JSON string (multipart form fields can't nest
+// arrays), so it's parsed here before the rest of the shape is checked.
+const partyVotesField = z.string().transform((val, ctx) => {
+  let parsed;
+  try {
+    parsed = JSON.parse(val);
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'partyVotes must be valid JSON' });
+    return z.NEVER;
+  }
+  const result = z.array(partyVoteEntry).min(1, 'At least one party\'s votes are required').safeParse(parsed);
+  if (!result.success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid partyVotes entries' });
+    return z.NEVER;
+  }
+  const ids = result.data.map((p) => p.partyId);
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Duplicate party in partyVotes' });
+    return z.NEVER;
+  }
+  return result.data;
+});
+
 export const submissionSchema = z
   .object({
     pollingUnitId: z.string().uuid(),
     totalRegisteredVoters: z.coerce.number().int().min(0),
     totalAccreditedVoters: z.coerce.number().int().min(0),
-    totalValidVotes: z.coerce.number().int().min(0),
     totalInvalidVotes: z.coerce.number().int().min(0),
-    totalVotes: z.coerce.number().int().min(0),
+    partyVotes: partyVotesField,
     submittingAgentName: z.string().min(2),
     submittingAgentPhone: z.string().regex(nigerianPhone, 'Invalid Nigerian phone number'),
     captureLat: z.coerce.number(),
     captureLng: z.coerce.number(),
     capturedAt: z.string().datetime(),
   })
+  // total valid votes and total votes are derived here, not separately
+  // agent-entered — a real result sheet's "total valid votes" is just the
+  // sum of every party's score, so there's nothing to reconcile against.
+  .transform((d) => ({
+    ...d,
+    totalValidVotes: d.partyVotes.reduce((sum, p) => sum + p.votes, 0),
+    totalVotes: d.partyVotes.reduce((sum, p) => sum + p.votes, 0) + d.totalInvalidVotes,
+  }))
   // SEC-2: server-side arithmetic integrity, independent of client validation
-  .refine((d) => d.totalVotes === d.totalValidVotes + d.totalInvalidVotes, {
-    message: 'total votes must equal valid + invalid votes',
-    path: ['totalVotes'],
-  })
   .refine((d) => d.totalAccreditedVoters <= d.totalRegisteredVoters, {
     message: 'accredited voters cannot exceed registered voters',
     path: ['totalAccreditedVoters'],
