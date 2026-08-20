@@ -11,7 +11,7 @@ export default function Layout({ children }) {
     <div className="admin-shell">
       <aside className="sidebar">
         <div className="brand">
-          <AaLogo size={36} />
+          <AaLogo size={45} />
           <div>
             <div className="brand-name">Action Alliance</div>
             <div className="brand-sub">Result Portal — Admin</div>

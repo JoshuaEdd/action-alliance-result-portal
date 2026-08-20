@@ -48,13 +48,19 @@ export default function WardPage() {
 
   return (
     <Layout>
-      <Breadcrumbs
-        crumbs={[
-          { label: 'Ahiazu Federal Constituency', to: '/dashboard' },
-          { label: lgaName || 'Local Government', to: `/lga/${lgaId}` },
-          { label: wardName || 'Ward', to: `/lga/${lgaId}/ward/${wardId}` },
-        ]}
-      />
+      <div className="admin-sticky-header">
+        <Breadcrumbs
+          crumbs={[
+            { label: 'Ahiazu Federal Constituency', to: '/dashboard' },
+            { label: lgaName || 'Local Government', to: `/lga/${lgaId}` },
+            { label: wardName || 'Ward', to: `/lga/${lgaId}/ward/${wardId}` },
+          ]}
+        />
+        <div className="page-heading">
+          <div className="page-kicker">Ward Results</div>
+          <h1>{wardName || 'Ward'}</h1>
+        </div>
+      </div>
 
       {partyResults && (
         <PartyResultsPanel

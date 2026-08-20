@@ -33,39 +33,38 @@ export default function OtpPage() {
   };
 
   return (
-    <div className="max-w-sm mx-auto pt-32 px-4" style={{ paddingTop: '8rem' }}>
-      <div className="flex items-center gap-3 mb-6">
-        <AaLogo size={48} />
-        <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Enter verification code</h1>
-      </div>
-      <p className="text-sm mb-6" style={{ color: 'var(--ink-soft)' }}>
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+      <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-black/5 p-6 pt-8 flex flex-col gap-5">
+        <div className="flex items-center gap-3">
+          <AaLogo size={48} />
+          <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Enter verification code</h1>
+        </div>
+      <p className="text-sm text-[var(--muted)]">
         A 6-digit code was sent to your {state.deliveredTo === 'email' ? 'email' : 'phone'}.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Input
-          label="Verification code"
-          type="text"
-          inputMode="numeric"
-          maxLength={6}
-          value={code}
-          onValueChange={(v) => setCode(v.replace(/\D/g, ''))}
-          isRequired
-          variant="bordered"
-          size="lg"
-          description="Enter the 6-digit code from your email or phone."
-        />
+        <div>
+          <label htmlFor="code" className="block text-sm font-medium mb-1.5">
+            Verification code
+          </label>
+          <Input
+            id="code"
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="6-digit code"
+            required
+            fullWidth
+          />
+        </div>
         {error && <p className="error-text">{error}</p>}
-        <Button
-          type="submit"
-          color="primary"
-          fullWidth
-          size="lg"
-          isLoading={loading}
-          isDisabled={code.length !== 6}
-        >
+        <Button type="submit" variant="primary" fullWidth isDisabled={loading || code.length !== 6}>
           {loading ? 'Verifying…' : 'Verify & continue'}
         </Button>
       </form>
+      </div>
     </div>
   );
 }

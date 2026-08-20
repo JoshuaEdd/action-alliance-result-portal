@@ -26,7 +26,13 @@ export default function CorrectionsPage() {
 
   return (
     <Layout>
-      <Breadcrumbs crumbs={[{ label: 'Correction Requests', to: '/corrections' }]} />
+      <div className="admin-sticky-header">
+        <Breadcrumbs crumbs={[{ label: 'Correction Requests', to: '/corrections' }]} />
+        <div className="page-heading">
+          <div className="page-kicker">Review Queue</div>
+          <h1>Correction Requests</h1>
+        </div>
+      </div>
 
       <Table>
         <Table.Content className="data-table" selectionMode="none" aria-label="Correction requests">

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Input, ProgressBar, Table } from '@heroui/react';
+import { Button, Card, Label, ProgressBar, SearchField, Table } from '@heroui/react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import Layout from '../components/Layout';
@@ -39,10 +39,10 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [load]);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!query.trim()) return setResults(null);
-    setResults(await api.search(token, query.trim()));
+  const runSearch = async (value) => {
+    const q = String(value ?? '').trim();
+    if (!q) return setResults(null);
+    setResults(await api.search(token, q));
   };
 
   const goToResult = (r) => {
@@ -53,26 +53,43 @@ export default function DashboardPage() {
 
   return (
     <Layout>
-      <Breadcrumbs crumbs={[{ label: 'Ahiazu Federal Constituency', to: '/dashboard' }]} showBack={false} />
+      <div className="admin-sticky-header">
+        <Breadcrumbs crumbs={[{ label: 'Ahiazu Federal Constituency', to: '/dashboard' }]} showBack={false} />
 
-      <div className="page-heading aa-dashboard-heading">
-        <AaLogo size={72} />
-        <div>
-          <div className="page-kicker">Action Alliance — Result Portal</div>
-          <h1>Ahiazu Federal Constituency</h1>
-          <p>Compiled election result statement for the constituency.</p>
+        <div className="page-heading aa-dashboard-heading">
+          <AaLogo size={56} />
+          <div>
+            <div className="page-kicker">Action Alliance — Result Portal</div>
+            <h1>Ahiazu Federal Constituency</h1>
+            <p>Compiled election result statement for the constituency.</p>
+          </div>
         </div>
       </div>
 
-      <form className="toolbar" onSubmit={handleSearch}>
-        <Input
-          className="search-input"
-          placeholder="Search local government, ward, or polling unit…"
+      <div className="w-full max-w-xl mb-6">
+        <SearchField
+          name="global-search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <Button className="btn btn-primary" type="submit">Search</Button>
-      </form>
+          onChange={setQuery}
+          onSubmit={runSearch}
+          onClear={() => setResults(null)}
+          aria-label="Search local government, ward, or polling unit"
+        >
+          <Label className="text-sm font-medium text-foreground block mb-1.5">
+            Search local government, ward, or polling unit
+          </Label>
+          <div className="flex items-center gap-2">
+            <SearchField.Group className="flex-1">
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Search…" />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+            <Button variant="primary" onPress={() => runSearch(query)}>
+              Search
+            </Button>
+          </div>
+        </SearchField>
+      </div>
 
       {results && (
         <Table>

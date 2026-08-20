@@ -103,22 +103,26 @@ export default function PollingUnitPage() {
 
   return (
     <Layout>
-      <Breadcrumbs
-        crumbs={[
-          { label: 'Federal Constituency', to: '/dashboard' },
-          { label: pu.lga_name, to: '#' },
-          { label: pu.ward_name, to: '#' },
-          { label: `${pu.pu_name} — PU ${pu.pu_number}`, to: `/polling-unit/${id}` },
-        ]}
-      />
-
-      <div className="toolbar">
-        <h2 style={{ fontSize: 18 }}>{pu.pu_name} — PU {pu.pu_number}</h2>
-        {hasSubmission && (
-          <Button className="btn btn-secondary" isDisabled={exportingPdf} onPress={handleExportPdf}>
-            {exportingPdf ? 'Exporting…' : 'Export PDF'}
-          </Button>
-        )}
+      <div className="admin-sticky-header">
+        <Breadcrumbs
+          crumbs={[
+            { label: 'Federal Constituency', to: '/dashboard' },
+            { label: pu.lga_name, to: '#' },
+            { label: pu.ward_name, to: '#' },
+            { label: `${pu.pu_name} — PU ${pu.pu_number}`, to: `/polling-unit/${id}` },
+          ]}
+        />
+        <div className="page-heading">
+          <div className="page-kicker">Polling Unit Detail</div>
+          <div className="flex items-center justify-between gap-4">
+            <h1 style={{ margin: 0 }}>{pu.pu_name} — PU {pu.pu_number}</h1>
+            {hasSubmission && (
+              <Button className="btn btn-secondary" isDisabled={exportingPdf} onPress={handleExportPdf}>
+                {exportingPdf ? 'Exporting…' : 'Export PDF'}
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       {!hasSubmission ? (

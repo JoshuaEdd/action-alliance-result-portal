@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Button, Input, ListBox, Select, Table } from '@heroui/react';
+import { useEffect, useMemo, useState } from 'react';
+import { Avatar, Button, Chip, Input, ListBox, Select, Table } from '@heroui/react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import Layout from '../components/Layout';
@@ -14,10 +14,31 @@ export default function AdminsPage() {
   const [form, setForm] = useState({ fullName: '', email: '', role: 'limited_admin', temporaryPassword: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sortDescriptor, setSortDescriptor] = useState({ column: 'full_name', direction: 'ascending' });
 
   const load = () => api.getAdmins(token).then(setAdmins);
 
   useEffect(() => { load(); }, [token]);
+
+  const initials = (name) =>
+    name.split(' ').map((n) => n[0] || '').join('').slice(0, 2).toUpperCase();
+
+  const sortedAdmins = useMemo(() => {
+    return [...admins].sort((a, b) => {
+      const col = sortDescriptor.column;
+      let x = a[col];
+      let y = b[col];
+      if (typeof x === 'boolean') {
+        x = x ? 1 : 0;
+        y = y ? 1 : 0;
+      } else {
+        x = String(x ?? '');
+        y = String(y ?? '');
+      }
+      const cmp = x < y ? -1 : x > y ? 1 : 0;
+      return sortDescriptor.direction === 'ascending' ? cmp : -cmp;
+    });
+  }, [admins, sortDescriptor]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -53,13 +74,17 @@ export default function AdminsPage() {
 
   return (
     <Layout>
-      <Breadcrumbs crumbs={[{ label: 'Administrators', to: '/admins' }]} />
-
-      <div className="toolbar">
-        <h2 style={{ fontSize: 16 }}>Administrator accounts</h2>
-        <Button className="btn btn-primary" onPress={() => setShowForm((v) => !v)}>
-          {showForm ? 'Cancel' : 'Add administrator'}
-        </Button>
+      <div className="admin-sticky-header">
+        <Breadcrumbs crumbs={[{ label: 'Administrators', to: '/admins' }]} />
+        <div className="page-heading">
+          <div className="page-kicker">User Management</div>
+          <div className="flex items-center justify-between gap-4">
+            <h1 style={{ margin: 0 }}>Administrator Accounts</h1>
+            <Button className="btn btn-primary" onPress={() => setShowForm((v) => !v)}>
+              {showForm ? 'Cancel' : 'Add administrator'}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {showForm && (
@@ -111,41 +136,61 @@ export default function AdminsPage() {
       )}
 
       <Table>
-        <Table.Content className="data-table" selectionMode="none" aria-label="Administrators">
+        <Table.ScrollContainer>
+        <Table.Content
+          className="data-table min-w-[800px]"
+          selectionMode="none"
+          aria-label="Administrators"
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
+        >
           <Table.Header>
-            <Table.Column>Name</Table.Column>
-            <Table.Column>Email</Table.Column>
-            <Table.Column>Role</Table.Column>
-            <Table.Column>Status</Table.Column>
-            <Table.Column>{''}</Table.Column>
+            <Table.Column allowsSorting isRowHeader id="full_name">
+              {({ sortDirection }) => (
+                <Table.SortableColumnHeader sortDirection={sortDirection}>Name</Table.SortableColumnHeader>
+              )}
+            </Table.Column>
+            <Table.Column allowsSorting id="role">
+              {({ sortDirection }) => (
+                <Table.SortableColumnHeader sortDirection={sortDirection}>Role</Table.SortableColumnHeader>
+              )}
+            </Table.Column>
+            <Table.Column allowsSorting id="is_active">
+              {({ sortDirection }) => (
+                <Table.SortableColumnHeader sortDirection={sortDirection}>Status</Table.SortableColumnHeader>
+              )}
+            </Table.Column>
+            <Table.Column className="text-end">{''}</Table.Column>
           </Table.Header>
           <Table.Body>
-            {admins.map((a) => (
+            {sortedAdmins.map((a) => (
               <Table.Row key={a.id} id={a.id}>
-                <Table.Cell>{a.full_name}</Table.Cell>
-                <Table.Cell>{a.email}</Table.Cell>
-                <Table.Cell>{a.role.replace('_', ' ')}</Table.Cell>
                 <Table.Cell>
-                  <span className={`status-pill ${a.is_active ? 'submitted' : 'flagged'}`}>
-                    {a.is_active ? 'enabled' : 'revoked'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <Avatar size="sm">
+                      <Avatar.Fallback>{initials(a.full_name)}</Avatar.Fallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{a.full_name}</span>
+                      <span className="text-xs text-muted">{a.email}</span>
+                    </div>
+                  </div>
                 </Table.Cell>
                 <Table.Cell>
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <Button
-                      className="btn btn-secondary"
-                      style={{ minHeight: 32, padding: '0 10px', fontSize: 12 }}
-                      onPress={() => toggleActive(a)}
-                    >
+                  <Chip size="sm" variant="soft" color="secondary">{a.role.replace('_', ' ')}</Chip>
+                </Table.Cell>
+                <Table.Cell>
+                  <Chip size="sm" variant="soft" color={a.is_active ? 'success' : 'danger'}>
+                    {a.is_active ? 'enabled' : 'revoked'}
+                  </Chip>
+                </Table.Cell>
+                <Table.Cell>
+                  <div className="flex items-center gap-2 justify-end">
+                    <Button variant="secondary" size="sm" onPress={() => toggleActive(a)}>
                       {a.is_active ? 'Revoke' : 'Reactivate'}
                     </Button>
                     {!a.is_active && (
-                      <Button
-                        className="btn btn-danger"
-                        style={{ minHeight: 32, padding: '0 10px', fontSize: 12 }}
-                        onPress={() => handleDelete(a)}
-                        isDisabled={a.id === user?.id}
-                      >
+                      <Button variant="danger-soft" size="sm" onPress={() => handleDelete(a)} isDisabled={a.id === user?.id}>
                         Delete
                       </Button>
                     )}
@@ -155,6 +200,7 @@ export default function AdminsPage() {
             ))}
           </Table.Body>
         </Table.Content>
+        </Table.ScrollContainer>
       </Table>
     </Layout>
   );

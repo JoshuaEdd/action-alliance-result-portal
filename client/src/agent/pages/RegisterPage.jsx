@@ -36,79 +36,95 @@ export default function RegisterPage() {
     }
   };
 
+  const field = 'block text-sm font-medium mb-1.5';
+
   return (
-    <div className="max-w-sm mx-auto pt-20 px-4" style={{ paddingTop: '5rem' }}>
-      <div className="flex items-center gap-3 mb-6">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+      <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-black/5 p-6 pt-8 flex flex-col gap-5">
+      <div className="flex items-center gap-3">
         <AaLogo size={52} />
         <div>
-          <h1 className="text-xl m-0" style={{ color: 'var(--aa-green-dark)' }}>Action Alliance</h1>
-          <div className="text-[11px] tracking-[0.06em] uppercase" style={{ fontFamily: 'var(--font-mono)', color: 'var(--aa-gold-dark)' }}>
+          <h1 className="text-xl m-0 font-bold" style={{ color: 'var(--aa-green-dark)', fontFamily: 'Poppins, var(--font-display)' }}>
+            Action Alliance
+          </h1>
+          <div className="text-[11px] tracking-[0.06em] uppercase text-[var(--muted)]" style={{ fontFamily: 'var(--font-mono)' }}>
             Create your agent account
           </div>
         </div>
       </div>
-      <p className="text-sm mb-5" style={{ color: 'var(--ink-soft)' }}>
+      <p className="text-sm text-[var(--muted)]">
         You'll need the invite code given to you for your polling unit.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Input
-          label="Invite code"
-          type="text"
-          value={form.inviteCode}
-          onValueChange={(v) => update({ inviteCode: v.toUpperCase() })}
-          isRequired
-          placeholder="e.g. F4LJ-BLCK"
-          variant="bordered"
-          size="lg"
-          classNames={{ input: 'font-mono tracking-wider uppercase' }}
-        />
-        <Input
-          label="Full name"
-          type="text"
-          value={form.fullName}
-          onValueChange={(v) => update({ fullName: v })}
-          isRequired
-          variant="bordered"
-          size="lg"
-        />
-        <Input
-          label="Email or phone number"
-          type="text"
-          value={form.identifier}
-          onValueChange={(v) => update({ identifier: v })}
-          isRequired
-          autoComplete="username"
-          variant="bordered"
-          size="lg"
-        />
-        <Input
-          label="Password"
-          type="password"
-          value={form.password}
-          onValueChange={(v) => update({ password: v })}
-          isRequired
-          autoComplete="new-password"
-          variant="bordered"
-          size="lg"
-        />
-        <Input
-          label="Confirm password"
-          type="password"
-          value={form.confirm}
-          onValueChange={(v) => update({ confirm: v })}
-          isRequired
-          autoComplete="new-password"
-          variant="bordered"
-          size="lg"
-        />
+        <div>
+          <label htmlFor="inviteCode" className={field}>Invite code</label>
+          <Input
+            id="inviteCode"
+            type="text"
+            value={form.inviteCode}
+            onChange={(e) => update({ inviteCode: e.target.value.toUpperCase() })}
+            placeholder="e.g. F4LJ-BLCK"
+            className="font-mono uppercase tracking-wider"
+            required
+            fullWidth
+          />
+        </div>
+        <div>
+          <label htmlFor="fullName" className={field}>Full name</label>
+          <Input
+            id="fullName"
+            type="text"
+            value={form.fullName}
+            onChange={(e) => update({ fullName: e.target.value })}
+            required
+            fullWidth
+          />
+        </div>
+        <div>
+          <label htmlFor="identifier" className={field}>Email or phone number</label>
+          <Input
+            id="identifier"
+            type="text"
+            value={form.identifier}
+            onChange={(e) => update({ identifier: e.target.value })}
+            autoComplete="username"
+            required
+            fullWidth
+          />
+        </div>
+        <div>
+          <label htmlFor="password" className={field}>Password</label>
+          <Input
+            id="password"
+            type="password"
+            value={form.password}
+            onChange={(e) => update({ password: e.target.value })}
+            autoComplete="new-password"
+            required
+            fullWidth
+          />
+        </div>
+        <div>
+          <label htmlFor="confirm" className={field}>Confirm password</label>
+          <Input
+            id="confirm"
+            type="password"
+            value={form.confirm}
+            onChange={(e) => update({ confirm: e.target.value })}
+            autoComplete="new-password"
+            required
+            fullWidth
+          />
+        </div>
         {error && <p className="error-text">{error}</p>}
-        <Button type="submit" color="primary" fullWidth size="lg" isLoading={loading}>
+        <Button type="submit" variant="primary" fullWidth>
           {loading ? 'Creating account…' : 'Create account'}
         </Button>
       </form>
-      <p className="text-sm mt-4 text-center">
-        Already have an account? <Link to="/login">Sign in</Link>
+      <p className="text-sm text-center text-[var(--muted)]">
+        Already have an account? <Link to="/login" className="text-[var(--accent)] font-medium">Sign in</Link>
       </p>
+      </div>
     </div>
   );
 }

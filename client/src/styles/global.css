@@ -1,6 +1,16 @@
 @import './tokens.css';
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  caret-color: transparent;
+}
+
+input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: auto;
+}
 
 html, body, #root {
   height: 100%;
@@ -23,6 +33,7 @@ h1, h2, h3 {
 button {
   font-family: var(--font-body);
   font-weight: 600;
+  user-select: none;
 }
 
 .app-shell {
@@ -165,6 +176,7 @@ button {
   border: none;
   font-size: 15px;
   cursor: pointer;
+  user-select: none;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .btn-primary {
@@ -197,6 +209,7 @@ button {
   border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  user-select: none;
 }
 .status-pill.pending { background: #FBE3D3; color: var(--alert-amber); }
 .status-pill.submitted { background: #DCE6F5; color: var(--field-green-dark); }

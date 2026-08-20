@@ -28,12 +28,18 @@ export default function LgaPage() {
 
   return (
     <Layout>
-      <Breadcrumbs
-        crumbs={[
-          { label: 'Ahiazu Federal Constituency', to: '/dashboard' },
-          { label: lgaName || 'Local Government', to: `/lga/${lgaId}` },
-        ]}
-      />
+      <div className="admin-sticky-header">
+        <Breadcrumbs
+          crumbs={[
+            { label: 'Ahiazu Federal Constituency', to: '/dashboard' },
+            { label: lgaName || 'Local Government', to: `/lga/${lgaId}` },
+          ]}
+        />
+        <div className="page-heading">
+          <div className="page-kicker">Local Government Area</div>
+          <h1>{lgaName || 'Local Government'}</h1>
+        </div>
+      </div>
 
       {partyResults && (
         <PartyResultsPanel
