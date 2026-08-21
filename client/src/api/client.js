@@ -40,8 +40,8 @@ export const api = {
   // Agent registration: account shell + WebAuthn fingerprint enrollment
   registerAgent: (fullName, email, pollingUnitId) =>
     request('/auth/register', { method: 'POST', body: { fullName, email, pollingUnitId } }),
-  webauthnRegisterOptions: (enrollmentToken) =>
-    request('/auth/webauthn/register/options', { method: 'POST', body: { enrollmentToken } }),
+  webauthnRegisterOptions: (enrollmentToken, email) =>
+    request('/auth/webauthn/register/options', { method: 'POST', body: { enrollmentToken, email } }),
   webauthnRegisterVerify: (enrollmentToken, challengeToken, response) =>
     request('/auth/webauthn/register/verify', { method: 'POST', body: { enrollmentToken, challengeToken, response } }),
   // Agent login: email + fingerprint assertion → session JWT

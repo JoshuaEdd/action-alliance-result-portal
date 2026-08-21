@@ -23,6 +23,10 @@ export default function RegisterPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(''); // progress label during ceremonies
+  // Survives a failed ceremony so "Try again" resumes where it stopped
+  // instead of restarting the whole form (the server also accepts email-only
+  // recovery if this token expires).
+  const [enrollmentToken, setEnrollmentToken] = useState(null);
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -46,47 +50,87 @@ export default function RegisterPage() {
     if (id) api.getPollingUnitsPublic(id).then(setPollingUnits).catch(() => {});
   };
 
+  const validateForm = () => {
+    if (!form.fullName.trim() || form.fullName.trim().length < 2) {
+      setError('Enter your full name');
+      return false;
+    }
+    if (!form.email.trim()) {
+      setError('Enter your email address');
+      return false;
+    }
+    if (!pollingUnitId) {
+      setError('Select your state, local government, ward, and polling unit');
+      return false;
+    }
+    return true;
+  };
+
+  // R2–R4: options → fingerprint scan → verify. Retryable as a unit.
+  const runEnrollment = async () => {
+    // Ask the server for creation options; the retained token is preferred,
+    // but email alone recovers an expired session.
+    setStage('Preparing fingerprint scan…');
+    const { options, challengeToken, enrollmentToken: freshToken } = await api.webauthnRegisterOptions(
+      enrollmentToken,
+      form.email.trim()
+    );
+    // The server always mints a fresh enrollment token with the options —
+    // use it for verify even if a retained one exists but has expired.
+    const activeToken = freshToken || enrollmentToken;
+    if (freshToken) setEnrollmentToken(freshToken);
+
+    setStage('Scan your fingerprint…');
+    const { startRegistration } = await import('@simplewebauthn/browser');
+    let attestation;
+    try {
+      attestation = await startRegistration({ optionsJSON: options });
+    } catch (err) {
+      throw new Error(
+        err?.name === 'NotAllowedError'
+          ? 'Fingerprint scan was cancelled. Tap Try again when you are ready.'
+          : 'This device could not perform a fingerprint scan. Use a phone or laptop with a biometric sensor.'
+      );
+    }
+
+    setStage('Linking fingerprint…');
+    await api.webauthnRegisterVerify(activeToken, challengeToken, attestation);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
 
-    if (!form.fullName.trim() || form.fullName.trim().length < 2) {
-      setError('Enter your full name');
-      return;
+    // A retry after a mid-ceremony failure skips account creation entirely —
+    // the shell already exists; only the fingerprint step is missing.
+    const isRetry = !!enrollmentToken;
+    if (isRetry || validateForm()) {
+      if (!isRetry && !pollingUnitId) return;
+      setLoading(true);
+      try {
+        if (!enrollmentToken) {
+          // R1 — create the account shell (or resume an incomplete one)
+          setStage('Creating account…');
+          const data = await api.registerAgent(form.fullName.trim(), form.email.trim(), pollingUnitId);
+          setEnrollmentToken(data.enrollmentToken);
+        }
+        await runEnrollment();
+        navigate('/login', { state: { justRegistered: true, registeredEmail: form.email.trim() } });
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+        setStage('');
+      }
     }
-    if (!pollingUnitId) {
-      setError('Select your state, local government, ward, and polling unit');
-      return;
-    }
+  };
 
+  // Explicit retry button handler — same path as submit but never re-creates
+  const handleRetry = async () => {
+    setError(null);
     setLoading(true);
     try {
-      // R1 — create the account shell
-      setStage('Creating account…');
-      const { enrollmentToken } = await api.registerAgent(form.fullName.trim(), form.email.trim(), pollingUnitId);
-
-      // R2 — ask the server for WebAuthn creation options
-      setStage('Preparing fingerprint scan…');
-      const { options, challengeToken } = await api.webauthnRegisterOptions(enrollmentToken);
-
-      // R3 — the device prompts for the fingerprint
-      setStage('Scan your fingerprint…');
-      const { startRegistration } = await import('@simplewebauthn/browser');
-      let attestation;
-      try {
-        attestation = await startRegistration({ optionsJSON: options });
-      } catch (err) {
-        throw new Error(
-          err?.name === 'NotAllowedError'
-            ? 'Fingerprint scan was cancelled. Please try again and complete the scan.'
-            : 'This device could not perform a fingerprint scan. Use a phone or laptop with a biometric sensor.'
-        );
-      }
-
-      // R4 — verify and store the credential
-      setStage('Linking fingerprint…');
-      await api.webauthnRegisterVerify(enrollmentToken, challengeToken, attestation);
-
+      await runEnrollment();
       navigate('/login', { state: { justRegistered: true, registeredEmail: form.email.trim() } });
     } catch (err) {
       setError(err.message);
@@ -117,6 +161,15 @@ export default function RegisterPage() {
         <p className="text-sm text-[var(--muted)]">
           No password needed — you'll sign in with your email and your device's fingerprint.
         </p>
+        {enrollmentToken && (
+          <div
+            className="rounded-xl px-4 py-3 text-sm font-medium"
+            style={{ background: 'rgba(0, 128, 96, 0.08)', color: 'var(--aa-green-dark)' }}
+            role="status"
+          >
+            Your account exists — just scan your fingerprint to finish setup.
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label htmlFor="fullName" className={field}>Full name</label>
@@ -125,6 +178,7 @@ export default function RegisterPage() {
               type="text"
               value={form.fullName}
               onChange={(e) => update({ fullName: e.target.value })}
+              disabled={!!enrollmentToken}
               required
               fullWidth
             />
@@ -138,6 +192,7 @@ export default function RegisterPage() {
               onChange={(e) => update({ email: e.target.value })}
               autoComplete="username webauthn"
               placeholder="you@example.com"
+              disabled={!!enrollmentToken}
               required
               fullWidth
             />
@@ -145,7 +200,13 @@ export default function RegisterPage() {
 
           <fieldset className="border-0 p-0 m-0 flex flex-col gap-3">
             <legend className={field}>Your polling unit</legend>
-            <select aria-label="State" className={selectCls} value={stateId} onChange={(e) => setStateId(e.target.value)}>
+            <select
+              aria-label="State"
+              className={selectCls}
+              value={stateId}
+              onChange={(e) => setStateId(e.target.value)}
+              disabled={!!enrollmentToken}
+            >
               <option value="">State…</option>
               {STATES.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
@@ -156,7 +217,7 @@ export default function RegisterPage() {
               className={selectCls}
               value={lgaId}
               onChange={(e) => pickLga(e.target.value)}
-              disabled={!stateId}
+              disabled={!stateId || !!enrollmentToken}
               required
             >
               <option value="">Local government…</option>
@@ -169,7 +230,7 @@ export default function RegisterPage() {
               className={selectCls}
               value={wardId}
               onChange={(e) => pickWard(e.target.value)}
-              disabled={!lgaId}
+              disabled={!lgaId || !!enrollmentToken}
               required
             >
               <option value="">Ward…</option>
@@ -184,7 +245,7 @@ export default function RegisterPage() {
               className={selectCls}
               value={pollingUnitId}
               onChange={(e) => setPollingUnitId(e.target.value)}
-              disabled={!wardId}
+              disabled={!wardId || !!enrollmentToken}
               required
             >
               <option value="">Polling unit…</option>
@@ -196,9 +257,15 @@ export default function RegisterPage() {
             </select>
           </fieldset>
 
-          {error && <p className="error-text">{error}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
           <Button type="submit" variant="primary" fullWidth disabled={loading}>
-            {loading ? stage || 'Working…' : 'Create account with fingerprint'}
+            {loading
+              ? stage || 'Working…'
+              : enrollmentToken
+                ? error
+                  ? 'Try fingerprint again'
+                  : 'Scan my fingerprint'
+                : 'Create account with fingerprint'}
           </Button>
         </form>
         <p className="text-sm text-center text-[var(--muted)]">
