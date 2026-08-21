@@ -5,7 +5,7 @@
   "description": "Action Alliance election result upload portal (single API + role-based web app)",
   "scripts": {
     "dev": "node dev.js",
-    "build": "npm --prefix server install && npm --prefix client install && npm --prefix client run build",
+    "build": "npm --prefix server install --include=dev && npm --prefix client install --include=dev && npm --prefix client run build",
     "start": "npm --prefix server run start",
     "setup": "npm --prefix server run setup",
     "migrate": "npm --prefix server run migrate",
