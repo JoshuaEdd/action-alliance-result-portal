@@ -23,6 +23,7 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 const hasClient = existsSync(path.join(clientDist, 'index.html'));
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(helmet());
 app.use(
