@@ -102,10 +102,21 @@ router.post(
       };
       for (const [field, photoType] of Object.entries(photoMap)) {
         const file = files[field][0];
+        // Per-photo shutter time from the client (falls back to the GPS-fix
+        // time, then to server receive time). created_at stays as the
+        // server-side receipt time — the two can differ by hours when a
+        // submission was queued offline.
+        const capturedAt =
+          d.photoTimestamps?.[field] || d.capturedAt || new Date();
+        console.log(
+          `[submission] photo received ref=${referenceNumber} type=${photoType} ` +
+          `captured_at=${capturedAt.toISOString()} received_at=${new Date().toISOString()} ` +
+          `bytes=${file.size}`
+        );
         await client.query(
-          `INSERT INTO submission_photos (submission_id, photo_type, storage_path, mime_type, size_bytes)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [submission.id, photoType, file.path, file.mimetype, file.size]
+          `INSERT INTO submission_photos (submission_id, photo_type, storage_path, mime_type, size_bytes, captured_at)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [submission.id, photoType, file.path, file.mimetype, file.size, capturedAt]
         );
       }
 

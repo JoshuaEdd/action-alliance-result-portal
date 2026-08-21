@@ -154,6 +154,12 @@ CREATE TABLE IF NOT EXISTS submission_photos (
   UNIQUE (submission_id, photo_type)
 );
 
+-- Migration: per-photo capture time as stamped by the agent's shutter
+-- (differs from created_at, which is when the server received the file —
+-- potentially hours later via the offline queue). Idempotent for DBs that
+-- already have the column from a fresh schema run.
+ALTER TABLE submission_photos ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ;
+
 -- ─────────────────────────────────────────────
 -- Per-party vote counts, mirroring exactly what's on the physical result
 -- sheet. total_valid_votes on the submission row is the authoritative sum

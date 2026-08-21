@@ -13,16 +13,13 @@ export default function ConfirmationPage() {
   const queued = submitResult.queued;
 
   return (
-    <div className="step-content" style={{ paddingTop: 64, textAlign: 'center' }}>
-      <div
-        className={`status-pill ${queued ? 'pending' : 'submitted'}`}
-        style={{ marginBottom: 24 }}
-      >
-        {queued ? 'Pending Upload' : 'Submitted'}
-      </div>
-
+    <div className="step-content confirm-wrap">
       {queued ? (
         <>
+          <div className="confirm-ring ring-pending">
+            <span className="confirm-icon">⇪</span>
+          </div>
+          <div className={`status-pill pending`} style={{ marginBottom: 24 }}>Pending Upload</div>
           <h2>Saved on this device</h2>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14 }}>
             No connection right now. This result is queued and will upload automatically
@@ -31,6 +28,13 @@ export default function ConfirmationPage() {
         </>
       ) : (
         <>
+          <div className="confirm-ring ring-success">
+            <svg viewBox="0 0 52 52" className="check-svg" aria-hidden="true">
+              <circle className="check-circle" cx="26" cy="26" r="24" fill="none" />
+              <path className="check-mark" fill="none" d="M14 27l8 8 16-17" />
+            </svg>
+          </div>
+          <div className={`status-pill submitted`} style={{ marginBottom: 24 }}>Submitted</div>
           <h2>Result received</h2>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 16 }}>
             Reference number — keep this for your records.

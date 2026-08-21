@@ -42,6 +42,10 @@ export function SubmissionProvider({ children }) {
   // suited to localStorage; a background sync worker would be the next step
   // if the app needs to survive a full process kill mid-capture.
   const [photos, setPhotos] = useState({}); // { agentTagPhoto, resultSheetPhoto, agentPassportPhoto }
+  // Exact wall-clock ISO time of each shutter press, keyed like photos.
+  // Travels with the submission so the server can store per-photo capture
+  // times even when everything arrives hours later via the offline queue.
+  const [photoMeta, setPhotoMeta] = useState({});
   const [gps, setGps] = useState(null); // { lat, lng, capturedAt } from photo capture step
   const [submitResult, setSubmitResult] = useState(null); // { referenceNumber, status } | { queued: true }
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +71,7 @@ export function SubmissionProvider({ children }) {
     setDraft(emptyDraft);
     setPartyVotes({});
     setPhotos({});
+    setPhotoMeta({});
     setGps(null);
     setStepIndex(0);
     localStorage.removeItem(DRAFT_KEY);
@@ -87,6 +92,8 @@ export function SubmissionProvider({ children }) {
       captureLat: gps?.lat,
       captureLng: gps?.lng,
       capturedAt: gps?.capturedAt,
+      // Per-photo shutter times — the server stores one per photo row.
+      photoTimestamps: JSON.stringify(photoMeta),
     };
 
     try {
@@ -114,7 +121,7 @@ export function SubmissionProvider({ children }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, partyVotes, gps, photos, token, user, clearDraft]);
+  }, [draft, partyVotes, gps, photos, photoMeta, token, user, clearDraft]);
 
   // Retry queued submissions whenever connectivity returns
   useEffect(() => {
@@ -141,6 +148,8 @@ export function SubmissionProvider({ children }) {
         updatePartyVotes,
         photos,
         setPhotos,
+        photoMeta,
+        setPhotoMeta,
         gps,
         setGps,
         submit,

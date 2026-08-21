@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSubmission } from '../../context/SubmissionContext';
+import { logCapture } from '../../../api/offlineQueue';
 import CameraCapture from '../CameraCapture';
 import ActionBar from '../ActionBar';
 
@@ -35,7 +36,7 @@ async function reverseGeocode(lat, lng) {
 // until a high-accuracy fix is granted (SEC-7 / FR-2.7). The same fix is
 // stamped onto every photo as a watermark for the admin record.
 export default function PhotoCaptureStep() {
-  const { photos, setPhotos, gps, setGps, goNext, goBack } = useSubmission();
+  const { photos, setPhotos, photoMeta, setPhotoMeta, gps, setGps, goNext, goBack } = useSubmission();
   const [previews, setPreviews] = useState({});
   const [locating, setLocating] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
@@ -73,12 +74,15 @@ export default function PhotoCaptureStep() {
           setGps((g) => (g ? { ...g, placeName } : g));
         });
       },
-      () => {
+      (err) => {
         busyRef.current = false;
         setLocationReady(false);
-        setLocationError(
-          'Precise location is required before any photo can be captured. Allow location access for this site, then try again.'
-        );
+        const named = err?.code === err?.PERMISSION_DENIED
+          ? 'Location permission is blocked for this site. Allow it in the address bar settings, then tap retry.'
+          : err?.code === err?.TIMEOUT
+            ? 'Getting a precise fix is taking too long. Move to open sky if possible and retry.'
+            : 'Your device could not provide a location. Check that location services are on, then retry.';
+        setLocationError(named);
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -89,14 +93,20 @@ export default function PhotoCaptureStep() {
     requestPreciseLocation();
   }, [requestPreciseLocation]);
 
-  const handleCapture = (key) => (blob, previewUrl) => {
+  const handleCapture = (key) => (blob, previewUrl, capturedAt) => {
     setPhotos((p) => ({ ...p, [key]: blob }));
     setPreviews((p) => ({ ...p, [key]: previewUrl }));
+    setPhotoMeta((m) => ({ ...m, [key]: capturedAt }));
+    // Durable local audit trail — written even with zero connectivity so a
+    // dropped signal can never erase when/where this photo was taken.
+    logCapture({
+      slot: key,
+      capturedAt,
+      lat: gps?.lat ?? null,
+      lng: gps?.lng ?? null,
+      accuracy: gps?.accuracy ?? null,
+    }).catch(() => {});
   };
-
-  const watermark = gps
-    ? `${new Date(gps.capturedAt).toLocaleString()} · ${gps.placeName || `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}`
-    : null;
 
   const allCaptured = SLOTS.every((s) => photos[s.key]);
   const canContinue = allCaptured && locationReady;
@@ -105,25 +115,26 @@ export default function PhotoCaptureStep() {
     <>
       <div className="step-content">
         <h2>Capture required photos</h2>
-        <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 16 }}>
+        <p className="step-hint">
           Live camera only — gallery uploads aren't accepted for any of these.
         </p>
 
         {!locationReady ? (
-          <div className="ledger" style={{ marginBottom: 16 }}>
-            <div className="ledger-row">
+          <div className="card notice-card">
+            <div className="notice-head">
+              <span className="notice-dot">📍</span>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>Precise location required</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Precise location required</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
                   Photo capture is disabled until your precise location is granted. This is used to verify the capture
                   point against your polling unit.
                 </div>
               </div>
             </div>
-            {locating && <p style={{ fontSize: 13, color: 'var(--ink-soft)', padding: '0 12px 8px' }}>Requesting location…</p>}
-            {locationError && <p className="error-text" style={{ padding: '0 12px 8px' }}>{locationError}</p>}
+            {locating && <p style={{ fontSize: 13, color: 'var(--ink-soft)', padding: '0 16px 8px' }}>Requesting location…</p>}
+            {locationError && <p className="error-text" style={{ padding: '0 16px 8px' }}>{locationError}</p>}
             {!locating && (
-              <div style={{ padding: '0 12px 12px' }}>
+              <div style={{ padding: '0 16px 16px' }}>
                 <button type="button" className="btn btn-primary" onClick={requestPreciseLocation}>
                   Grant precise location
                 </button>
@@ -131,22 +142,28 @@ export default function PhotoCaptureStep() {
             )}
           </div>
         ) : (
-          <p style={{ fontSize: 12, color: 'var(--aa-green-dark)', marginBottom: 12 }}>
-            Precise location granted — {gps.lat.toFixed(6)}, {gps.lng.toFixed(6)} (±{Math.round(gps.accuracy)}m). Photos
-            will be watermarked with this fix.
-          </p>
+          <div className="gps-chip-row">
+            <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
+            <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
+          </div>
         )}
 
         {locationReady &&
           SLOTS.map((s) => (
-            <CameraCapture
-              key={s.key}
-              label={s.label}
-              captured={previews[s.key]}
-              onCapture={handleCapture(s.key)}
-              watermark={watermark}
-              defaultFacing={s.defaultFacing}
-            />
+            <div key={s.key}>
+              <CameraCapture
+                label={s.label}
+                captured={previews[s.key]}
+                onCapture={handleCapture(s.key)}
+                geo={gps}
+                defaultFacing={s.defaultFacing}
+              />
+              {photoMeta[s.key] && (
+                <p className="capture-time">
+                  Captured {new Date(photoMeta[s.key]).toLocaleString()}
+                </p>
+              )}
+            </div>
           ))}
       </div>
       <ActionBar onBack={goBack} onNext={goNext} nextDisabled={!canContinue} />

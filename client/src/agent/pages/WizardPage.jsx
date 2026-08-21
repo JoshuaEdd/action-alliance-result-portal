@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useSubmission } from '../context/SubmissionContext';
-import ProgressBar from '../components/ProgressBar';
+import AgentHeader from '../components/AgentHeader';
+import Stepper from '../components/Stepper';
 import LocationStep from '../components/steps/LocationStep';
 import VoteCountsStep from '../components/steps/VoteCountsStep';
 import AgentDetailsStep from '../components/steps/AgentDetailsStep';
@@ -16,7 +17,7 @@ const STEP_COMPONENTS = {
 };
 
 export default function WizardPage() {
-  const { stepIndex, currentStep, submitResult } = useSubmission();
+  const { stepIndex, currentStep, gps, submitResult } = useSubmission();
   const navigate = useNavigate();
 
   if (submitResult) {
@@ -28,8 +29,11 @@ export default function WizardPage() {
 
   return (
     <>
-      <ProgressBar stepIndex={stepIndex} />
-      <StepComponent />
+      <AgentHeader gps={gps} />
+      <Stepper stepIndex={stepIndex} />
+      <div key={currentStep} className="step-enter">
+        <StepComponent />
+      </div>
     </>
   );
 }

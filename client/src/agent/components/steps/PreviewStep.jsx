@@ -12,7 +12,7 @@ const SLOTS = [
 
 export default function PreviewStep() {
   const { token } = useAuth();
-  const { draft, partyVotes, photos, goBack, submit, submitting, submitError } = useSubmission();
+  const { draft, partyVotes, photos, photoMeta, goBack, submit, submitting, submitError } = useSubmission();
   const [previewStage, setPreviewStage] = useState(0); // 0 = data, 1 = parties, 2 = photos
   const [parties, setParties] = useState([]);
 
@@ -77,6 +77,11 @@ export default function PreviewStep() {
                   {photos[s.key] && <img src={URL.createObjectURL(photos[s.key])} alt={s.label} />}
                 </div>
                 <p style={{ fontSize: 11, textAlign: 'center', color: 'var(--ink-soft)' }}>{s.label}</p>
+                {photoMeta[s.key] && (
+                  <p className="capture-time" style={{ textAlign: 'center' }}>
+                    {new Date(photoMeta[s.key]).toLocaleTimeString()}
+                  </p>
+                )}
               </div>
             ))}
           </div>

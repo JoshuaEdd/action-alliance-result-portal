@@ -30,6 +30,28 @@ const partyVotesField = z.string().transform((val, ctx) => {
   return result.data;
 });
 
+// photoTimestamps arrives as a JSON string mapping photo field name → ISO
+// datetime of the actual shutter press. Optional (older clients don't send
+// it); unknown keys and unparseable values are dropped, never rejected —
+// this is audit enrichment, not a gate.
+const photoTimestampsField = z.string().optional().transform((val, ctx) => {
+  if (!val) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(val);
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'photoTimestamps must be valid JSON' });
+    return z.NEVER;
+  }
+  const out = {};
+  for (const [key, iso] of Object.entries(parsed)) {
+    if (typeof iso === 'string' && !Number.isNaN(Date.parse(iso))) {
+      out[key] = new Date(iso);
+    }
+  }
+  return out;
+});
+
 export const submissionSchema = z
   .object({
     pollingUnitId: z.string().uuid(),
@@ -42,6 +64,7 @@ export const submissionSchema = z
     captureLat: z.coerce.number(),
     captureLng: z.coerce.number(),
     capturedAt: z.string().datetime(),
+    photoTimestamps: photoTimestampsField,
   })
   // total valid votes and total votes are derived here, not separately
   // agent-entered — a real result sheet's "total valid votes" is just the
