@@ -37,12 +37,28 @@ async function request(path, { method = 'GET', body, token, isForm = false } = {
 
 export const api = {
   // --- shared auth ---
-  register: (inviteCode, fullName, identifier, password) =>
-    request('/auth/register', { method: 'POST', body: { inviteCode, fullName, identifier, password } }),
+  // Agent registration: account shell + WebAuthn fingerprint enrollment
+  registerAgent: (fullName, email, pollingUnitId) =>
+    request('/auth/register', { method: 'POST', body: { fullName, email, pollingUnitId } }),
+  webauthnRegisterOptions: (enrollmentToken) =>
+    request('/auth/webauthn/register/options', { method: 'POST', body: { enrollmentToken } }),
+  webauthnRegisterVerify: (enrollmentToken, challengeToken, response) =>
+    request('/auth/webauthn/register/verify', { method: 'POST', body: { enrollmentToken, challengeToken, response } }),
+  // Agent login: email + fingerprint assertion → session JWT
+  webauthnLoginOptions: (email) =>
+    request('/auth/webauthn/login/options', { method: 'POST', body: { email } }),
+  webauthnLoginVerify: (email, challengeToken, response) =>
+    request('/auth/webauthn/login/verify', { method: 'POST', body: { email, challengeToken, response } }),
+  // Admin login: password + OTP (unchanged)
   loginPassword: (identifier, password) =>
     request('/auth/login/password', { method: 'POST', body: { identifier, password } }),
   verifyOtp: (preAuthToken, code) =>
     request('/auth/login/verify-otp', { method: 'POST', body: { preAuthToken, code } }),
+
+  // --- public locations (agent registration cascade) ---
+  getLocalGovernmentsPublic: () => request('/locations/local-governments'),
+  getWardsPublic: (lgaId) => request(`/locations/local-governments/${lgaId}/wards`),
+  getPollingUnitsPublic: (wardId) => request(`/locations/wards/${wardId}/polling-units`),
 
   // --- agent ---
   getMyPollingUnit: (token) => request('/locations/my-polling-unit', { token }),

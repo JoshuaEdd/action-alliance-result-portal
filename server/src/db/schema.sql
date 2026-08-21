@@ -79,6 +79,30 @@ CREATE TABLE IF NOT EXISTS users (
 -- for databases that already had a `users` table without it.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Agents authenticate with fingerprint biometrics (WebAuthn), not passwords —
+-- password_hash stays NOT NULL only for legacy rows; new agent rows are NULL.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- ─────────────────────────────────────────────
+-- WebAuthn credentials (agent fingerprint login)
+-- Browsers never expose raw biometric data; instead the device's platform
+-- authenticator (Touch ID / Windows Hello / Android fingerprint) signs a
+-- server-issued challenge and we store the corresponding public key here.
+-- One row per enrolled device per user.
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id            TEXT PRIMARY KEY, -- base64url credential ID from the authenticator
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  public_key    TEXT NOT NULL,    -- base64url-encoded COSE public key
+  counter       BIGINT NOT NULL DEFAULT 0,
+  device_type   TEXT,
+  backed_up     BOOLEAN NOT NULL DEFAULT FALSE,
+  transports    TEXT[],
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx ON webauthn_credentials (user_id);
+
 -- One agent per polling unit — enforced at the DB level, not just in
 -- application code, so a race between two simultaneous registrations
 -- with different (still-valid) codes for the same PU can't both succeed.

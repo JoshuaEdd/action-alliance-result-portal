@@ -4,12 +4,16 @@ import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/local-governments', requireAuth, async (_req, res) => {
+// The browse endpoints are public: agent self-registration needs the
+// State → LGA → Ward → PU cascade before it has a session. Only names and
+// IDs are exposed (all published by INEC anyway); per-unit results stay
+// behind auth.
+router.get('/local-governments', async (_req, res) => {
   const { rows } = await pool.query(`SELECT id, name FROM local_governments ORDER BY name`);
   res.json(rows);
 });
 
-router.get('/local-governments/:lgaId/wards', requireAuth, async (req, res) => {
+router.get('/local-governments/:lgaId/wards', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, name, ward_number FROM wards WHERE local_government_id = $1 ORDER BY ward_number`,
     [req.params.lgaId]
@@ -17,7 +21,7 @@ router.get('/local-governments/:lgaId/wards', requireAuth, async (req, res) => {
   res.json(rows);
 });
 
-router.get('/wards/:wardId/polling-units', requireAuth, async (req, res) => {
+router.get('/wards/:wardId/polling-units', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, name, pu_number FROM polling_units WHERE ward_id = $1 ORDER BY pu_number`,
     [req.params.wardId]

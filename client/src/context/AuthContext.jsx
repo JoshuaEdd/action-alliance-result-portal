@@ -46,8 +46,27 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  // Agent fingerprint sign-in: runs the WebAuthn assertion ceremony and
+  // stores the resulting session exactly like the OTP path does.
+  const loginBiometric = async (email) => {
+    const { options, challengeToken } = await api.webauthnLoginOptions(email);
+    const { startAuthentication } = await import('@simplewebauthn/browser');
+    let assertion;
+    try {
+      assertion = await startAuthentication({ optionsJSON: options });
+    } catch {
+      throw new Error('Fingerprint scan was cancelled or failed. Try again.');
+    }
+    const data = await api.webauthnLoginVerify(email, challengeToken, assertion);
+    setToken(data.token);
+    setUser(data.user);
+    sessionStorage.setItem('token', data.token);
+    sessionStorage.setItem('user', JSON.stringify(data.user));
+    return data;
+  };
+
   return (
-    <AuthContext.Provider value={{ token, user, loginPassword, verifyOtp, logout }}>
+    <AuthContext.Provider value={{ token, user, loginPassword, verifyOtp, loginBiometric, logout }}>
       {children}
     </AuthContext.Provider>
   );
