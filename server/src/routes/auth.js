@@ -60,6 +60,23 @@ async function loadAgentByEmail(email) {
   return rows[0] || null;
 }
 
+// An "incomplete" agent account has no fingerprint credential yet — it can't
+// sign in and is safe to resume: the person who controls the email is the
+// only one who can ever finish enrolling it.
+async function findIncompleteAgentByEmail(email) {
+  const { rows } = await pool.query(
+    `SELECT u.* FROM users u
+     WHERE u.email = $1 AND u.role = 'agent' AND u.is_active = TRUE AND u.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.id)`,
+    [email]
+  );
+  return rows[0] || null;
+}
+
+function mintEnrollmentToken(userId) {
+  return signChallenge({ id: userId, stage: 'enroll' }, '10m');
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // AGENT REGISTRATION — no invite codes, no passwords.
 // The agent picks their polling unit from the location cascade and links
@@ -67,7 +84,10 @@ async function loadAgentByEmail(email) {
 // One-agent-per-PU stays enforced by the DB's unique partial index.
 // ─────────────────────────────────────────────────────────────────────
 
-// STEP R1 — create the account shell, hand back an enrollment token
+// STEP R1 — create the account shell (or RESUME an incomplete one), hand
+// back an enrollment token. A failed fingerprint scan, expired session, or
+// dropped connection after this point never locks the agent out: they can
+// re-submit this same form and pick up where they left off.
 router.post('/register', loginLimiter, async (req, res) => {
   const { fullName, email, pollingUnitId } = req.body;
   if (!fullName || !email || !pollingUnitId) {
@@ -83,6 +103,30 @@ router.post('/register', loginLimiter, async (req, res) => {
     return res.status(404).json({ error: 'Polling unit not recognized' });
   }
 
+  // Retry path: the email belongs to an account whose fingerprint enrollment
+  // never completed. Refresh its details and hand back a fresh token instead
+  // of rejecting with "account exists".
+  const incomplete = await findIncompleteAgentByEmail(normalizedEmail);
+  if (incomplete) {
+    try {
+      await pool.query(
+        `UPDATE users SET full_name = $1, assigned_polling_unit_id = $2, location_locked = TRUE WHERE id = $3`,
+        [String(fullName).trim(), pollingUnitId, incomplete.id]
+      );
+      return res.status(200).json({
+        enrollmentToken: mintEnrollmentToken(incomplete.id),
+        resumed: true,
+        message: 'Finishing fingerprint setup for your existing account.',
+      });
+    } catch (err) {
+      if (err.code === '23505') {
+        return res.status(409).json({ error: 'This polling unit already has an agent' });
+      }
+      console.error(err);
+      return res.status(500).json({ error: 'Could not update account, please retry' });
+    }
+  }
+
   try {
     const { rows } = await pool.query(
       `INSERT INTO users (role, full_name, email, password_hash, assigned_polling_unit_id, location_locked)
@@ -91,15 +135,17 @@ router.post('/register', loginLimiter, async (req, res) => {
       [String(fullName).trim(), normalizedEmail, pollingUnitId]
     );
     // Short-lived token binding the WebAuthn ceremony to this fresh account
-    const enrollmentToken = signChallenge({ id: rows[0].id, stage: 'enroll' }, '10m');
-    res.status(201).json({ enrollmentToken, message: 'Account created — scan your fingerprint to finish.' });
+    res.status(201).json({
+      enrollmentToken: mintEnrollmentToken(rows[0].id),
+      message: 'Account created — scan your fingerprint to finish.',
+    });
   } catch (err) {
     if (err.code === '23505') {
       const puTaken = /polling_unit/i.test(err.constraint || '');
       return res.status(409).json({
         error: puTaken
           ? 'This polling unit already has an agent'
-          : 'An account already exists for that email',
+          : 'This email is already registered — sign in with your fingerprint instead',
       });
     }
     console.error(err);
@@ -107,12 +153,23 @@ router.post('/register', loginLimiter, async (req, res) => {
   }
 });
 
-// STEP R2 — WebAuthn creation options for the fingerprint enrollment
+// STEP R2 — WebAuthn creation options for the fingerprint enrollment.
+// Accepts either a live enrollmentToken OR the agent's email: if the token
+// expired mid-ceremony (10m TTL), the email alone re-mints one for an
+// incomplete account, so a retry never forces starting over.
 router.post('/webauthn/register/options', loginLimiter, async (req, res) => {
-  const { enrollmentToken } = req.body;
-  const enroll = enrollmentToken && verifySigned(enrollmentToken, 'enroll');
+  const { enrollmentToken, email } = req.body;
+  let enroll = enrollmentToken && verifySigned(enrollmentToken, 'enroll');
+
+  if (!enroll && email) {
+    // Expired/lost token — recover via email for credential-less accounts
+    const incomplete = await findIncompleteAgentByEmail(String(email).trim().toLowerCase());
+    if (incomplete) {
+      enroll = { id: incomplete.id, stage: 'enroll' };
+    }
+  }
   if (!enroll) {
-    return res.status(401).json({ error: 'Enrollment session expired — please register again' });
+    return res.status(401).json({ error: 'Enrollment session expired — submit the form again to continue' });
   }
 
   const { rows } = await pool.query(
@@ -146,7 +203,9 @@ router.post('/webauthn/register/options', loginLimiter, async (req, res) => {
   });
 
   const challengeToken = signChallenge({ chal: options.challenge, uid: user.id, stage: 'chal-reg' }, '10m');
-  res.json({ options, challengeToken });
+  // Always issue a fresh enrollment token alongside the options — if the
+  // original one expired, this keeps the verify step (R3) self-sufficient.
+  res.json({ options, challengeToken, enrollmentToken: mintEnrollmentToken(user.id) });
 });
 
 // STEP R3 — verify the attestation and store the credential's public key
