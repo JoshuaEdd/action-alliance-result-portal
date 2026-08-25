@@ -38,7 +38,7 @@ router.post(
     }
 
     for (const key of Object.keys(files)) {
-      const scan = await scanFile(files[key][0].path);
+      const scan = await scanFile(files[key][0].buffer);
       if (!scan.clean) return res.status(422).json({ error: 'A file failed the security scan' });
     }
 
@@ -114,9 +114,9 @@ router.post(
           `bytes=${file.size}`
         );
         await client.query(
-          `INSERT INTO submission_photos (submission_id, photo_type, storage_path, mime_type, size_bytes, captured_at)
+          `INSERT INTO submission_photos (submission_id, photo_type, data, mime_type, size_bytes, captured_at)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [submission.id, photoType, file.path, file.mimetype, file.size, capturedAt]
+          [submission.id, photoType, file.buffer, file.mimetype, file.size, capturedAt]
         );
       }
 
