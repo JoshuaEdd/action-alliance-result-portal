@@ -209,19 +209,20 @@ router.get('/polling-units/:id', audit('view_pu_detail'), async (req, res) => {
 });
 
 // SEC-9 — serve a stored submission photo to an authenticated admin only.
-// Files live outside any static/root directory (see middleware/upload.js),
-// so the raw storage_path is never exposed through static serving.
+// Bytes live in the database (submission_photos.data); rows predating that
+// migration fall back to their legacy storage_path file.
 router.get('/photos/:photoId', audit('view_photo'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT storage_path, mime_type FROM submission_photos WHERE id = $1`,
+    `SELECT data, storage_path, mime_type FROM submission_photos WHERE id = $1`,
     [req.params.photoId]
   );
   const photo = rows[0];
   if (!photo) return res.status(404).json({ error: 'Photo not found' });
-  const filePath = path.resolve(photo.storage_path);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Photo file is missing' });
   res.setHeader('Content-Type', photo.mime_type);
   res.setHeader('Cache-Control', 'private, no-store');
+  if (photo.data) return res.send(photo.data);
+  const filePath = path.resolve(photo.storage_path);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Photo file is missing' });
   res.sendFile(filePath);
 });
 
@@ -394,18 +395,23 @@ router.get(
 // ── FR-4.6 / FR-4.11 — PDF export for a single polling unit ────────
 
 const PHOTO_LABELS = { agent_tag: 'Agent tag', result_sheet: 'Result sheet', agent_passport: 'Agent passport' };
-// Only JPEG/PNG (what pdfkit can render) that actually exist on disk are
-// included; others are skipped rather than failing the export.
+// Only JPEG/PNG (what pdfkit can render) whose bytes are available — in the
+// database or, for legacy rows, on disk — are included; others are skipped
+// rather than failing the export.
 function loadSubmissionPhotos(submissionId) {
   return pool
     .query(
-      `SELECT id, photo_type, storage_path, mime_type FROM submission_photos WHERE submission_id = $1`,
+      `SELECT id, photo_type, data, storage_path, mime_type FROM submission_photos WHERE submission_id = $1`,
       [submissionId]
     )
     .then(({ rows }) =>
       rows
         .map((p) => ({ ...p, label: PHOTO_LABELS[p.photo_type] || p.photo_type }))
-        .filter((p) => ['image/jpeg', 'image/png'].includes(p.mime_type) && fs.existsSync(p.storage_path))
+        .filter(
+          (p) =>
+            ['image/jpeg', 'image/png'].includes(p.mime_type) &&
+            (p.data || (p.storage_path && fs.existsSync(p.storage_path)))
+        )
     );
 }
 
@@ -448,7 +454,7 @@ function addSubmissionContent(doc, r, photos, { newPage = false } = {}) {
 
     photos.forEach((photo, i) => {
       try {
-        const buffer = fs.readFileSync(photo.storage_path);
+        const buffer = photo.data || fs.readFileSync(photo.storage_path);
         const x = rowLeft + i * (boxW + gap);
         doc.image(buffer, { x, y: rowY, fit: [boxW, boxH], align: 'center', valign: 'middle' });
         doc.fontSize(9).fillColor('#555').text(photo.label, x, rowY + boxH + 4, { width: boxW, align: 'center' });

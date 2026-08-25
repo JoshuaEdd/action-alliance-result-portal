@@ -184,6 +184,13 @@ CREATE TABLE IF NOT EXISTS submission_photos (
 -- already have the column from a fresh schema run.
 ALTER TABLE submission_photos ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ;
 
+-- Migration: photo bytes now live IN the database (data BYTEA). Render's
+-- ephemeral disk wiped ./uploads on every deploy/restart, so uploaded
+-- evidence vanished while its database row survived. New uploads keep
+-- storage_path NULL; pre-migration rows fall back to their legacy file.
+ALTER TABLE submission_photos ADD COLUMN IF NOT EXISTS data BYTEA;
+ALTER TABLE submission_photos ALTER COLUMN storage_path DROP NOT NULL;
+
 -- ─────────────────────────────────────────────
 -- Per-party vote counts, mirroring exactly what's on the physical result
 -- sheet. total_valid_votes on the submission row is the authoritative sum
