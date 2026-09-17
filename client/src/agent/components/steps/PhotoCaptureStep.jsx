@@ -41,30 +41,47 @@ export default function PhotoCaptureStep() {
   const [locating, setLocating] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
   const [locationError, setLocationError] = useState(null);
-  const busyRef = useRef(false);
+  // A single in-flight geolocation watch per step. getCurrentPosition waits
+  // for one final, most-accurate reading before returning, which can stall
+  // for the full timeout indoors/under tree cover; watchPosition hands back a
+  // fix as soon as the browser has one and refines it in later updates, so
+  // we clear the watch on the first successful reading — much faster in the
+  // field. The same clearing-on-tap means a re-tap (a fresh user gesture,
+  // which browsers answer far quicker than a non-gesture request) restarts
+  // cleanly instead of two requests fighting over the one prompt.
+  const watchRef = useRef(null);
 
   const requestPreciseLocation = useCallback(() => {
-    // StrictMode double-mounts effects in dev, which used to fire two
-    // concurrent getCurrentPosition calls — the error callback of the losing
-    // call then overrode the winner's success, leaving the step stuck on the
-    // "precise location required" panel even after access was granted.
-    if (busyRef.current) return;
-    busyRef.current = true;
     setLocating(true);
     setLocationError(null);
 
     if (!navigator.geolocation) {
-      busyRef.current = false;
       setLocating(false);
       setLocationError('Location is not supported by this browser. Use a modern browser over HTTPS.');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+    // Drop any in-flight request first. StrictMode double-mounts effects in
+    // dev (and fast finger taps re-fire this) — stacking concurrent requests
+    // made the loser's error callback override the winner's fix, leaving the
+    // step stuck on "precise location required" after access was granted.
+    if (watchRef.current != null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+
+    const finish = () => {
+      if (watchRef.current != null) {
+        navigator.geolocation.clearWatch(watchRef.current);
+        watchRef.current = null;
+      }
+    };
+
+    watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         const capturedAt = new Date().toISOString();
-        busyRef.current = false;
+        finish();
         setGps({ lat, lng, capturedAt, accuracy });
         setLocationReady(true);
         setLocating(false);
@@ -75,7 +92,7 @@ export default function PhotoCaptureStep() {
         });
       },
       (err) => {
-        busyRef.current = false;
+        finish();
         setLocationReady(false);
         const named = err?.code === err?.PERMISSION_DENIED
           ? 'Location permission is blocked for this site. Allow it in the address bar settings, then tap retry.'
@@ -85,13 +102,18 @@ export default function PhotoCaptureStep() {
         setLocationError(named);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, [setGps]);
 
   useEffect(() => {
     requestPreciseLocation();
   }, [requestPreciseLocation]);
+
+  useEffect(() => () => {
+    // Release the watch if the agent leaves this step mid-request.
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+  }, []);
 
   const handleCapture = (key) => (blob, previewUrl, capturedAt) => {
     setPhotos((p) => ({ ...p, [key]: blob }));
@@ -137,6 +159,13 @@ export default function PhotoCaptureStep() {
               <div style={{ padding: '0 16px 16px' }}>
                 <button type="button" className="btn btn-primary" onClick={requestPreciseLocation}>
                   Grant precise location
+                </button>
+              </div>
+            )}
+            {locating && (
+              <div style={{ padding: '0 16px 16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={requestPreciseLocation}>
+                  Retry precise location
                 </button>
               </div>
             )}

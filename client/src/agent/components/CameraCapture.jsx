@@ -51,6 +51,14 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
       setError(supportError);
       return;
     }
+    // Release any stream we already hold BEFORE asking for a new one. If a
+    // previous stream is still running on the same camera hardware (as when
+    // flipping front/back or retaking a photo), the browser treats it as
+    // "another app using the camera" and rejects the request with a busy
+    // NotReadableError — that is exactly the error agents keep hitting.
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setStream(null);
     setError(null);
     setVideoReady(false);
     setActive(true); // mount the <video> first so the frame exists
@@ -63,7 +71,6 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
         },
         audio: false,
       });
-      streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = mediaStream;
       setStream(mediaStream);
     } catch (err) {
