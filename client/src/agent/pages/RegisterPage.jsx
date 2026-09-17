@@ -31,7 +31,9 @@ export default function RegisterPage() {
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
-    api.getLocalGovernmentsPublic().then(setLgas).catch(() => {});
+    api.getLocalGovernmentsPublic()
+      .then((d) => setLgas(Array.isArray(d) ? d : []))
+      .catch(() => {});
   }, []);
 
   const pickLga = (id) => {
@@ -40,14 +42,14 @@ export default function RegisterPage() {
     setPollingUnitId('');
     setWards([]);
     setPollingUnits([]);
-    if (id) api.getWardsPublic(id).then(setWards).catch(() => {});
+    if (id) api.getWardsPublic(id).then((d) => setWards(Array.isArray(d) ? d : [])).catch(() => {});
   };
 
   const pickWard = (id) => {
     setWardId(id);
     setPollingUnitId('');
     setPollingUnits([]);
-    if (id) api.getPollingUnitsPublic(id).then(setPollingUnits).catch(() => {});
+    if (id) api.getPollingUnitsPublic(id).then((d) => setPollingUnits(Array.isArray(d) ? d : [])).catch(() => {});
   };
 
   const validateForm = () => {
