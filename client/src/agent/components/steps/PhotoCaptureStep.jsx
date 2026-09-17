@@ -119,9 +119,23 @@ export default function PhotoCaptureStep() {
         setLocationError(named);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 30000 }
     );
   }, [setGps]);
+
+  // Field escape hatch: if this device simply cannot produce a fix (no GPS,
+  // permission hard-blocked, insecure origin), the agent can still work. The
+  // photos then stamp "UNVERIFIED LOCATION" / "NO GPS FIX" so the admin can
+  // see at a glance that the capture point is not geotagged.
+  const skipLocation = useCallback(() => {
+    if (watchRef.current != null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+    setLocating(false);
+    setLocationError(null);
+    setLocationReady(true);
+  }, []);
 
   useEffect(() => () => {
     // Release the watch if the agent leaves this step mid-request.
@@ -175,21 +189,43 @@ export default function PhotoCaptureStep() {
                 {locating ? 'Requesting… (tap to retry)' : 'Grant precise location'}
               </button>
             </div>
+            <div style={{ padding: '0 16px 16px' }}>
+              <button type="button" className="btn btn-secondary" onClick={skipLocation}>
+                Continue without location
+              </button>
+              <p style={{ fontSize: 11, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
+                Photos without a fix are stamped <strong>UNVERIFIED LOCATION</strong> and stand out in
+                verification.
+              </p>
+            </div>
           </div>
         ) : (
           <>
             <div className="gps-chip-row">
-              {gps.accuracy > COARSE_METERS ? (
-                <span className="chip chip-warn">Approximate fix ±{Math.round(gps.accuracy)}m</span>
+              {gps ? (
+                <>
+                  {gps.accuracy > COARSE_METERS ? (
+                    <span className="chip chip-warn">Approximate fix ±{Math.round(gps.accuracy)}m</span>
+                  ) : (
+                    <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
+                  )}
+                  <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
+                </>
               ) : (
-                <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
+                <span className="chip chip-warn">UNVERIFIED LOCATION</span>
               )}
-              <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
             </div>
-            {gps.accuracy > COARSE_METERS && (
+            {gps ? (
+              gps.accuracy > COARSE_METERS && (
+                <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
+                  This looks like an approximate fix (±{Math.round(gps.accuracy)}m). For a tighter record,
+                  choose Precise in the location permission pop-up or your phone's location settings.
+                </p>
+              )
+            ) : (
               <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
-                This looks like an approximate fix (±{Math.round(gps.accuracy)}m). For a tighter record,
-                choose Precise in the location permission pop-up or your phone's location settings.
+                No GPS fix — capture will be stamped <strong>UNVERIFIED LOCATION</strong>. If your phone can
+                share location, go back a step and grant precise access for a geotagged record.
               </p>
             )}
           </>
