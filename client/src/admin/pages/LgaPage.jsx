@@ -19,10 +19,10 @@ export default function LgaPage() {
 
   useEffect(() => {
     api.getLocalGovernments(token).then((all) => {
-      const found = all.find((l) => l.id === lgaId);
+      const found = (Array.isArray(all) ? all : []).find((l) => l.id === lgaId);
       if (found) setLgaName(found.name);
     });
-    api.getWards(token, lgaId).then(setWards);
+    api.getWards(token, lgaId).then((d) => setWards(Array.isArray(d) ? d : []));
     api.getPartyResults(token, 'lga', lgaId).then(setPartyResults);
   }, [token, lgaId]);
 

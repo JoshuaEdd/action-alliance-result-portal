@@ -13,13 +13,14 @@ const STATES = [{ id: 'imo', name: 'Imo State' }]; // portal covers Ahiazu Feder
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ fullName: '', email: '' });
-  const [stateId, setStateId] = useState('');
+  const [stateId, setStateId] = useState(STATES[0]?.id || '');
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
   const [pollingUnitId, setPollingUnitId] = useState('');
   const [lgas, setLgas] = useState([]);
   const [wards, setWards] = useState([]);
   const [pollingUnits, setPollingUnits] = useState([]);
+  const [locationError, setLocationError] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(''); // progress label during ceremonies
@@ -30,10 +31,15 @@ export default function RegisterPage() {
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
 
-  useEffect(() => {
+  const loadLgas = () => {
+    setLocationError(null);
     api.getLocalGovernmentsPublic()
       .then((d) => setLgas(Array.isArray(d) ? d : []))
-      .catch(() => {});
+      .catch(() => setLocationError('Could not load local governments. Check your connection and try again.'));
+  };
+
+  useEffect(() => {
+    loadLgas();
   }, []);
 
   const pickLga = (id) => {
@@ -42,14 +48,22 @@ export default function RegisterPage() {
     setPollingUnitId('');
     setWards([]);
     setPollingUnits([]);
-    if (id) api.getWardsPublic(id).then((d) => setWards(Array.isArray(d) ? d : [])).catch(() => {});
+    if (id) {
+      api.getWardsPublic(id)
+        .then((d) => setWards(Array.isArray(d) ? d : []))
+        .catch(() => setLocationError('Could not load wards. Check your connection and try again.'));
+    }
   };
 
   const pickWard = (id) => {
     setWardId(id);
     setPollingUnitId('');
     setPollingUnits([]);
-    if (id) api.getPollingUnitsPublic(id).then((d) => setPollingUnits(Array.isArray(d) ? d : [])).catch(() => {});
+    if (id) {
+      api.getPollingUnitsPublic(id)
+        .then((d) => setPollingUnits(Array.isArray(d) ? d : []))
+        .catch(() => setLocationError('Could not load polling units. Check your connection and try again.'));
+    }
   };
 
   const validateForm = () => {
@@ -202,6 +216,11 @@ export default function RegisterPage() {
 
           <fieldset className="border-0 p-0 m-0 flex flex-col gap-3">
             <legend className={field}>Your polling unit</legend>
+            {locationError && (
+              <p className="text-xs font-medium px-3 py-2 rounded-lg" style={{ background: 'rgba(220,38,38,0.08)', color: 'var(--error-red)' }} role="alert">
+                {locationError}
+              </p>
+            )}
             <select
               aria-label="State"
               className={selectCls}

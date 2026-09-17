@@ -26,7 +26,7 @@ export default function DashboardPage() {
     }
     try {
       const l = await api.getLocalGovernments(token);
-      setLgas(l);
+      setLgas(Array.isArray(l) ? l : []);
     } catch {
       // keep prior data
     }

@@ -16,7 +16,7 @@ export default function AdminsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sortDescriptor, setSortDescriptor] = useState({ column: 'full_name', direction: 'ascending' });
 
-  const load = () => api.getAdmins(token).then(setAdmins);
+  const load = () => api.getAdmins(token).then((d) => setAdmins(Array.isArray(d) ? d : []));
 
   useEffect(() => { load(); }, [token]);
 
