@@ -292,6 +292,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: var(--step-12) var(--step-16);
 }
@@ -301,6 +302,7 @@ button {
 }
 .ledger-row .ledger-label,
 .tally-label {
+  min-width: 0;
   font-size: 13px;
   color: var(--ink-soft);
 }
@@ -310,7 +312,8 @@ button {
   font-size: 20px;
   font-weight: 600;
   text-align: right;
-  width: 110px;
+  min-width: 0;
+  width: min(110px, 34vw);
   border: none;
   background: var(--paper);
   border-radius: 10px;
@@ -360,6 +363,7 @@ button {
 .party-card-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 10px;
 }
@@ -378,9 +382,11 @@ button {
   place-items: center;
 }
 .party-name {
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 .party-entry {
   display: flex;
@@ -389,6 +395,7 @@ button {
 }
 .party-entry input {
   flex: 1;
+  min-width: 0;
   min-height: 46px;
   border: none;
   border-radius: 12px;
@@ -453,7 +460,7 @@ button {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-radius: var(--radius-xl);
+  border-radius: 16px;
   box-shadow: var(--shadow-float);
   z-index: 10;
 }
