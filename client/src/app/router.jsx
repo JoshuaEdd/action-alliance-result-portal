@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ErrorBoundary from '../admin/components/ErrorBoundary';
+import TopBar from '../components/TopBar';
 import LoginPage from '../pages/LoginPage';
 import OtpPage from '../pages/OtpPage';
 
@@ -99,6 +100,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
+        <TopBar />
         <Routed />
       </ErrorBoundary>
     </BrowserRouter>

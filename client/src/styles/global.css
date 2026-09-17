@@ -45,6 +45,38 @@ button {
   background: var(--paper);
 }
 
+/* ── Always-on brand strip — Action Alliance pinned to the top ─── */
+.top-brand {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(207, 218, 232, 0.6);
+  box-shadow: 0 2px 10px rgba(11, 31, 63, 0.05);
+}
+.top-brand-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--aa-deep-dark);
+}
+.top-brand-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--aa-orange-dark);
+}
+
 /* ── Agent hero header — gradient, no borders ─────────────────── */
 .agent-hero {
   background: var(--grad-hero);
@@ -325,6 +357,18 @@ button {
   outline: none;
   box-shadow: var(--glow-cyan);
 }
+.ledger-row input::-webkit-outer-spin-button,
+.ledger-row input::-webkit-inner-spin-button,
+.tally-row input::-webkit-outer-spin-button,
+.tally-row input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ledger-row input[type="number"],
+.tally-row input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 .ledger-row.derived .ledger-label,
 .tally-row.derived .tally-label { color: var(--ink); font-weight: 600; }
 .ledger-row.error input,
@@ -350,6 +394,7 @@ button {
 
 /* ── Party cards — big tappable vote entry ────── */
 .party-card {
+  min-width: 0;
   border-radius: var(--radius-lg);
   background: #fff;
   box-shadow: var(--shadow-card);
@@ -391,10 +436,11 @@ button {
 .party-entry {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .party-entry input {
-  flex: 1;
+  flex: 1 1 140px;
   min-width: 0;
   min-height: 46px;
   border: none;
@@ -407,14 +453,26 @@ button {
   color: var(--ink);
   transition: box-shadow 0.2s ease;
 }
+/* Hide the browser's number spinners — they add an unshrinkable slab that
+   pushes the field past the card edge on narrow screens (our − / + buttons
+   already handle stepping). */
+.party-entry input::-webkit-outer-spin-button,
+.party-entry input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.party-entry input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 .party-entry input:focus {
   outline: none;
   box-shadow: var(--glow-cyan);
 }
 .stepper-btn {
   flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
+  width: clamp(42px, 12vw, 46px);
+  height: clamp(42px, 12vw, 46px);
   border: none;
   border-radius: 14px;
   background: var(--paper-dim);

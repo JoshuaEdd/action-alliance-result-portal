@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // Captures only through the device camera — there is deliberately no
 // <input type="file"> fallback (FR-2.6). The live feed is rear-facing by
 // default (surveillance-style shot of the paper sheet) and can toggle to
-// the user/front camera for the agent passport.
+// the user/front camera as a fallback for agents whose rear camera is busy
+// or broken.
 //
 // Reliability rules learned the hard way:
 //  - getUserMedia only exists in secure contexts (HTTPS/localhost). We check

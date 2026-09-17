@@ -7,8 +7,13 @@ import ActionBar from '../ActionBar';
 const SLOTS = [
   { key: 'agentTagPhoto', label: 'Polling unit agent tag photo' },
   { key: 'resultSheetPhoto', label: 'Polling unit result sheet photo' },
-  { key: 'agentPassportPhoto', label: "Agent's passport photo", defaultFacing: 'user' },
+  { key: 'agentPassportPhoto', label: "Agent's passport photo" },
 ];
+
+// All three captures use the rear camera — including the passport shot. The
+// camera default in CameraCapture is 'environment', so no defaultFacing is
+// needed here; the manual front/back toggle in the viewfinder still exists as
+// a fallback if a device's rear camera is unavailable.
 
 // Reverse-geocodes a capture point into a human-readable place name (OSM
 // Nominatim). Falls back to null so the stamp degrades gracefully to raw
