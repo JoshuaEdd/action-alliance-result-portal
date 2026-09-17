@@ -35,14 +35,14 @@ export default function WardPage() {
 
   useEffect(() => {
     api.getLocalGovernments(token).then((all) => {
-      const found = all.find((l) => l.id === lgaId);
+      const found = (Array.isArray(all) ? all : []).find((l) => l.id === lgaId);
       if (found) setLgaName(found.name);
     });
     api.getWards(token, lgaId).then((all) => {
-      const found = all.find((w) => w.id === wardId);
+      const found = (Array.isArray(all) ? all : []).find((w) => w.id === wardId);
       if (found) setWardName(`${found.name} — Ward ${found.ward_number}`);
     });
-    api.getPollingUnits(token, wardId).then(setPollingUnits);
+    api.getPollingUnits(token, wardId).then((d) => setPollingUnits(Array.isArray(d) ? d : []));
     api.getPartyResults(token, 'ward', wardId).then(setPartyResults);
   }, [token, lgaId, wardId]);
 

@@ -10,7 +10,7 @@ export default function CorrectionsPage() {
   const [requests, setRequests] = useState([]);
   const [busyId, setBusyId] = useState(null);
 
-  const load = () => api.getCorrectionRequests(token).then(setRequests);
+  const load = () => api.getCorrectionRequests(token).then((d) => setRequests(Array.isArray(d) ? d : []));
 
   useEffect(() => { load(); }, [token]);
 
