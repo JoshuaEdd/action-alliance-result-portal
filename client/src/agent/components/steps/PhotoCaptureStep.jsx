@@ -40,6 +40,13 @@ async function reverseGeocode(lat, lng) {
 // browser permission is requested up front and live capture is rejected
 // until a high-accuracy fix is granted (SEC-7 / FR-2.7). The same fix is
 // stamped onto every photo as a watermark for the admin record.
+//
+// "Precise" has to be enforced, not just requested: some phones let the
+// agent answer the browser's location pop-up with "Approximate" instead,
+// which returns a fix too coarse to pin a photo to its polling unit. Any fix
+// worse than PRECISION_METERS is treated as approximate — capture stays
+// locked and the agent is told how to pick Precise.
+const PRECISION_METERS = 200;
 export default function PhotoCaptureStep() {
   const { photos, setPhotos, photoMeta, setPhotoMeta, gps, setGps, goNext, goBack } = useSubmission();
   const [previews, setPreviews] = useState({});
@@ -86,7 +93,22 @@ export default function PhotoCaptureStep() {
       (pos) => {
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         const capturedAt = new Date().toISOString();
+
+        // The phone may have granted the pop-up as "Approximate location".
+        // Don't accept a fix too coarse to tie a photo to its unit — keep the
+        // watch running (it may refine on its own) and tell the agent to pick
+        // Precise instead of silently stamping a bogus pin onto the images.
+        if (accuracy > PRECISION_METERS) {
+          setLocationReady(false);
+          setLocationError(
+            `The phone shared approximate location only (±${Math.round(accuracy)}m). In the location permission pop-up choose Precise (or open Settings → Apps → this browser → Location → Precise), then retry.`
+          );
+          setLocating(true);
+          return;
+        }
+
         finish();
+        setLocationError(null);
         setGps({ lat, lng, capturedAt, accuracy });
         setLocationReady(true);
         setLocating(false);
@@ -153,8 +175,9 @@ export default function PhotoCaptureStep() {
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Precise location required</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
-                  Photo capture is disabled until your precise location is granted. This is used to verify the capture
-                  point against your polling unit.
+                  When your phone asks about location access, choose <strong>Allow</strong> and{' '}
+                  <strong>Precise</strong> so photo capture can unlock. Your location is used to verify
+                  the capture point against your polling unit.
                 </div>
               </div>
             </div>
