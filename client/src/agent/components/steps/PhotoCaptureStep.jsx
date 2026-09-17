@@ -36,17 +36,23 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
-// Precise location is a hard gate on this step, not an afterthought: the
-// browser permission is requested up front and live capture is rejected
-// until a high-accuracy fix is granted (SEC-7 / FR-2.7). The same fix is
-// stamped onto every photo as a watermark for the admin record.
+// Location is a gate on this step, not an afterthought: the browser
+// permission is requested from the button tap and live capture stays locked
+// until a fix is granted (SEC-7 / FR-2.7). The same fix is stamped onto every
+// photo as a watermark for the admin record.
 //
-// "Precise" has to be enforced, not just requested: some phones let the
-// agent answer the browser's location pop-up with "Approximate" instead,
-// which returns a fix too coarse to pin a photo to its polling unit. Any fix
-// worse than PRECISION_METERS is treated as approximate — capture stays
-// locked and the agent is told how to pick Precise.
-const PRECISION_METERS = 200;
+// Two hard lessons from the field shaped this logic:
+//  - The request fires ONLY from a tap. An auto-request on page mount is not
+//    a user gesture, and phones (esp. iOS Safari) often refuse to show the
+//    permission pop-up for it — the step then waits forever with no prompt.
+//    Starting on tap makes the pop-up appear deterministically.
+//  - We never refuse to unlock on accuracy. Some phones answer the pop-up
+//    with "Approximate", giving a coarse fix; a hard no-go waiting for a
+//    tighter reading is what kept bricking photo capture. Any real fix now
+//    unlocks capture — an approximate one is just flagged with a warning chip
+//    so the agent (and the admin record) can see the accuracy honestly.
+// A fix fresher than 30s is reused so a returning agent unlocks instantly.
+const COARSE_METERS = 200;
 export default function PhotoCaptureStep() {
   const { photos, setPhotos, photoMeta, setPhotoMeta, gps, setGps, goNext, goBack } = useSubmission();
   const [previews, setPreviews] = useState({});
@@ -58,9 +64,8 @@ export default function PhotoCaptureStep() {
   // for the full timeout indoors/under tree cover; watchPosition hands back a
   // fix as soon as the browser has one and refines it in later updates, so
   // we clear the watch on the first successful reading — much faster in the
-  // field. The same clearing-on-tap means a re-tap (a fresh user gesture,
-  // which browsers answer far quicker than a non-gesture request) restarts
-  // cleanly instead of two requests fighting over the one prompt.
+  // field. A re-tap clears any in-flight watch and restarts cleanly instead
+  // of two requests fighting over the one prompt.
   const watchRef = useRef(null);
 
   const requestPreciseLocation = useCallback(() => {
@@ -73,10 +78,9 @@ export default function PhotoCaptureStep() {
       return;
     }
 
-    // Drop any in-flight request first. StrictMode double-mounts effects in
-    // dev (and fast finger taps re-fire this) — stacking concurrent requests
-    // made the loser's error callback override the winner's fix, leaving the
-    // step stuck on "precise location required" after access was granted.
+    // Drop any in-flight request first (StrictMode dev double-mounts and fast
+    // taps re-fire this — stacked requests made the loser's error callback
+    // override the winner's fix and lock the step).
     if (watchRef.current != null) {
       navigator.geolocation.clearWatch(watchRef.current);
       watchRef.current = null;
@@ -93,20 +97,6 @@ export default function PhotoCaptureStep() {
       (pos) => {
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         const capturedAt = new Date().toISOString();
-
-        // The phone may have granted the pop-up as "Approximate location".
-        // Don't accept a fix too coarse to tie a photo to its unit — keep the
-        // watch running (it may refine on its own) and tell the agent to pick
-        // Precise instead of silently stamping a bogus pin onto the images.
-        if (accuracy > PRECISION_METERS) {
-          setLocationReady(false);
-          setLocationError(
-            `The phone shared approximate location only (±${Math.round(accuracy)}m). In the location permission pop-up choose Precise (or open Settings → Apps → this browser → Location → Precise), then retry.`
-          );
-          setLocating(true);
-          return;
-        }
-
         finish();
         setLocationError(null);
         setGps({ lat, lng, capturedAt, accuracy });
@@ -124,18 +114,14 @@ export default function PhotoCaptureStep() {
         const named = err?.code === err?.PERMISSION_DENIED
           ? 'Location permission is blocked for this site. Allow it in the address bar settings, then tap retry.'
           : err?.code === err?.TIMEOUT
-            ? 'Getting a precise fix is taking too long. Move to open sky if possible and retry.'
-            : 'Your device could not provide a location. Check that location services are on, then retry.';
+            ? 'Getting a fix is taking longer than usual. Move to open sky if possible, then tap to retry.'
+            : 'Your device could not provide a location. Check that location services are on, then tap to retry.';
         setLocationError(named);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
   }, [setGps]);
-
-  useEffect(() => {
-    requestPreciseLocation();
-  }, [requestPreciseLocation]);
 
   useEffect(() => () => {
     // Release the watch if the agent leaves this step mid-request.
@@ -173,36 +159,40 @@ export default function PhotoCaptureStep() {
             <div className="notice-head">
               <span className="notice-dot">📍</span>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Precise location required</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Location required</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
-                  When your phone asks about location access, choose <strong>Allow</strong> and{' '}
-                  <strong>Precise</strong> so photo capture can unlock. Your location is used to verify
-                  the capture point against your polling unit.
+                  Tap the button to start. When your phone asks about location access, choose{' '}
+                  <strong>Allow</strong> and <strong>Precise</strong> — photo capture unlocks as soon as
+                  a fix is available. The location is used to verify the capture point against your
+                  polling unit.
                 </div>
               </div>
             </div>
             {locating && <p style={{ fontSize: 13, color: 'var(--ink-soft)', padding: '0 16px 8px' }}>Requesting location…</p>}
             {locationError && <p className="error-text" style={{ padding: '0 16px 8px' }}>{locationError}</p>}
-            {!locating && (
-              <div style={{ padding: '0 16px 16px' }}>
-                <button type="button" className="btn btn-primary" onClick={requestPreciseLocation}>
-                  Grant precise location
-                </button>
-              </div>
-            )}
-            {locating && (
-              <div style={{ padding: '0 16px 16px' }}>
-                <button type="button" className="btn btn-secondary" onClick={requestPreciseLocation}>
-                  Retry precise location
-                </button>
-              </div>
-            )}
+            <div style={{ padding: '0 16px 16px' }}>
+              <button type="button" className={locating ? 'btn btn-secondary' : 'btn btn-primary'} onClick={requestPreciseLocation}>
+                {locating ? 'Requesting… (tap to retry)' : 'Grant precise location'}
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="gps-chip-row">
-            <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
-            <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
-          </div>
+          <>
+            <div className="gps-chip-row">
+              {gps.accuracy > COARSE_METERS ? (
+                <span className="chip chip-warn">Approximate fix ±{Math.round(gps.accuracy)}m</span>
+              ) : (
+                <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
+              )}
+              <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
+            </div>
+            {gps.accuracy > COARSE_METERS && (
+              <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
+                This looks like an approximate fix (±{Math.round(gps.accuracy)}m). For a tighter record,
+                choose Precise in the location permission pop-up or your phone's location settings.
+              </p>
+            )}
+          </>
         )}
 
         {locationReady &&

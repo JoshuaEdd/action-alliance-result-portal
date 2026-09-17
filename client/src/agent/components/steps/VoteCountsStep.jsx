@@ -4,13 +4,17 @@ import { useSubmission } from '../../context/SubmissionContext';
 import { api } from '../../../api/client';
 import ActionBar from '../ActionBar';
 
-// One tappable card per party. The +/- steppers make one-handed entry fast
-// in the field; the numeric input stays for direct typing. AA (priority
-// party) gets a brand-gradient hero card so its result is never buried.
+// One tappable card per party. For the other (non-hero) parties the value is
+// set with +/− steppers only — no text input, so field entry can't be typed
+// past the record sheet (FR-2.x field speed). AA (priority party) keeps the
+// brand-gradient hero card with a direct-typing input so its result is never
+// buried under the other ~20 parties on the ballot.
 function PartyCard({ name, abbreviation, value, onChange, hero = false }) {
   const bump = (delta) => {
     const current = Number(value) || 0;
     const next = Math.max(0, current + delta);
+    // Always commit a real string so a party left at 0 still counts as
+    // entered (tap − once on a blank card to register 0).
     onChange(String(next));
   };
   return (
@@ -23,12 +27,16 @@ function PartyCard({ name, abbreviation, value, onChange, hero = false }) {
         <button type="button" className="stepper-btn" onClick={() => bump(-1)} aria-label={`Decrease ${abbreviation}`}>
           −
         </button>
-        <input
-          type="number" inputMode="numeric" min="0" placeholder="0"
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={`${name} votes`}
-        />
+        {hero ? (
+          <input
+            type="number" inputMode="numeric" min="0" placeholder="0"
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            aria-label={`${name} votes`}
+          />
+        ) : (
+          <span className="party-count" aria-label={`${name} votes`}>{value ?? '0'}</span>
+        )}
         <button type="button" className="stepper-btn stepper-btn-add" onClick={() => bump(1)} aria-label={`Increase ${abbreviation}`}>
           +
         </button>
