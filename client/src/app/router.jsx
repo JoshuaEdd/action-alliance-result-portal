@@ -98,7 +98,9 @@ function Routed() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routed />
+      <ErrorBoundary>
+        <Routed />
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

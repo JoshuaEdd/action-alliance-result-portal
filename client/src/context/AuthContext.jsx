@@ -7,8 +7,13 @@ const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // mirrors server JWT_EXPIRES_IN defa
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => sessionStorage.getItem('token'));
   const [user, setUser] = useState(() => {
-    const raw = sessionStorage.getItem('user');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = sessionStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      sessionStorage.removeItem('user');
+      return null;
+    }
   });
   const timeoutRef = useRef(null);
 
