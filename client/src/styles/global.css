@@ -113,6 +113,18 @@ button {
   font-weight: 800;
   font-size: 16px;
 }
+.hero-logout {
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.hero-logout:active { transform: scale(0.95); background: rgba(255, 255, 255, 0.28); }
 .chip-row {
   display: flex;
   gap: 8px;

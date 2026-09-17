@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 // connectivity, GPS lock state, and how many submissions are still queued
 // on this device waiting for a signal.
 export default function AgentHeader({ gps }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [online, setOnline] = useState(navigator.onLine);
   const [pending, setPending] = useState(0);
 
@@ -32,7 +32,12 @@ export default function AgentHeader({ gps }) {
           <div className="agent-hero-eyebrow">Field Agent</div>
           <div className="agent-hero-name">{user?.fullName || 'Agent'}</div>
         </div>
-        <div className={`hero-avatar`}>{(user?.fullName || 'A').charAt(0)}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" className="hero-logout" onClick={logout} aria-label="Sign out">
+            Sign out
+          </button>
+          <div className={`hero-avatar`}>{(user?.fullName || 'A').charAt(0)}</div>
+        </div>
       </div>
       <div className="chip-row">
         <span className={`chip ${online ? 'chip-ok' : 'chip-warn'}`}>
