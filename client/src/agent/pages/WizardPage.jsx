@@ -17,7 +17,7 @@ const STEP_COMPONENTS = {
 };
 
 export default function WizardPage() {
-  const { stepIndex, currentStep, gps, submitResult } = useSubmission();
+  const { stepIndex, currentStep, gps, gpsLoading, submitResult } = useSubmission();
   const navigate = useNavigate();
 
   if (submitResult) {
@@ -29,7 +29,7 @@ export default function WizardPage() {
 
   return (
     <>
-      <AgentHeader gps={gps} />
+      <AgentHeader gps={gps} locating={gpsLoading} />
       <Stepper stepIndex={stepIndex} />
       <div key={currentStep} className="step-enter">
         <StepComponent />

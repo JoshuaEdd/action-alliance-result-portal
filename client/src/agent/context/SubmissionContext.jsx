@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { api } from '../../api/client';
 import { enqueueSubmission, flushQueue } from '../../api/offlineQueue';
 import { useAuth } from '../../context/AuthContext';
+import { getLocation, reverseGeocode, formatLocationError } from '../utils/geo';
 
 const SubmissionContext = createContext(null);
 const DRAFT_KEY = 'result-draft-v1';
@@ -46,10 +47,53 @@ export function SubmissionProvider({ children }) {
   // Travels with the submission so the server can store per-photo capture
   // times even when everything arrives hours later via the offline queue.
   const [photoMeta, setPhotoMeta] = useState({});
-  const [gps, setGps] = useState(null); // { lat, lng, capturedAt } from photo capture step
+  const [gps, setGps] = useState(null); // { lat, lng, capturedAt, accuracy, placeName }
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState(null);
   const [submitResult, setSubmitResult] = useState(null); // { referenceNumber, status } | { queued: true }
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+
+  const requestGps = useCallback(async () => {
+    setGpsLoading(true);
+    setGpsError(null);
+    try {
+      const pos = await getLocation();
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      const capturedAt = new Date().toISOString();
+      const fix = { lat, lng, capturedAt, accuracy };
+      setGps(fix);
+      setGpsLoading(false);
+      reverseGeocode(lat, lng).then((placeName) => {
+        if (placeName) {
+          setGps((g) => (g ? { ...g, placeName } : g));
+        }
+      });
+      return fix;
+    } catch (err) {
+      setGpsLoading(false);
+      const msg = formatLocationError(err);
+      setGpsError(msg);
+      throw err;
+    }
+  }, []);
+
+  // Proactively check if geolocation permission is already granted.
+  // If granted (e.g. returning agent or previously allowed in browser),
+  // obtain the fix early so that Steps 1-3 show active GPS and Step 4 unlocks immediately.
+  // If not granted ('prompt'), we don't pop up prematurely to respect mobile browser UX.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && navigator?.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          if (status.state === 'granted') {
+            requestGps().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+  }, [requestGps]);
 
   // FR-2.11 — auto-save local draft as the agent progresses
   useEffect(() => {
@@ -73,6 +117,7 @@ export function SubmissionProvider({ children }) {
     setPhotos({});
     setPhotoMeta({});
     setGps(null);
+    setGpsError(null);
     setStepIndex(0);
     localStorage.removeItem(DRAFT_KEY);
     localStorage.removeItem(`${DRAFT_KEY}:parties`);
@@ -152,6 +197,9 @@ export function SubmissionProvider({ children }) {
         setPhotoMeta,
         gps,
         setGps,
+        gpsLoading,
+        gpsError,
+        requestGps,
         submit,
         submitting,
         submitError,
