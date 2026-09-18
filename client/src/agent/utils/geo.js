@@ -2,21 +2,76 @@
 // Handles high-accuracy GPS with automatic fallback to coarse/network location,
 // error normalization across browsers, and reverse geocoding.
 
-// Reverse-geocodes coordinates into a human-readable place name (OSM Nominatim).
+// Reverse-geocodes coordinates into a human-readable street name and approximate location.
+// Distinguishes precise street names from coarse/approximate area names (neighbourhood, LGA, state).
 // Gracefully degrades to null when offline or rate-limited.
 export async function reverseGeocode(lat, lng) {
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=17`
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18`
     );
     if (!res.ok) return null;
     const data = await res.json();
     const a = data.address || {};
-    const area =
-      a.road || a.neighbourhood || a.suburb || a.village || a.town || a.city || a.city_district;
-    const region = a.state_district || a.state || a.county;
-    const name = [area, region].filter(Boolean).join(', ');
-    return name ? name.slice(0, 70) : null;
+
+    // 1. Precise street or thoroughfare
+    const street =
+      a.road ||
+      a.pedestrian ||
+      a.footway ||
+      a.street ||
+      a.cycleway ||
+      a.path ||
+      a.highway ||
+      null;
+
+    // 2. Locality: neighbourhood, suburb, village, town, or city
+    const locality =
+      a.neighbourhood ||
+      a.suburb ||
+      a.residential ||
+      a.village ||
+      a.hamlet ||
+      a.town ||
+      a.city ||
+      a.city_district ||
+      null;
+
+    // 3. LGA / County / District
+    const lga =
+      a.county ||
+      a.state_district ||
+      a.municipality ||
+      null;
+
+    // 4. State
+    const state = a.state || null;
+
+    let displayName = null;
+    let shortName = null;
+    let approximateName = null;
+
+    if (street) {
+      const secondary = locality || lga || state;
+      displayName = secondary ? `${street}, ${secondary}` : street;
+      shortName = street;
+    } else {
+      displayName = [locality, lga || state].filter(Boolean).join(', ') || state || null;
+      shortName = locality || lga || state || null;
+    }
+
+    approximateName = [locality, lga || state].filter(Boolean).join(', ') || state || null;
+
+    return {
+      street: street ? street.slice(0, 60) : null,
+      locality: locality ? locality.slice(0, 50) : null,
+      lga: lga ? lga.slice(0, 50) : null,
+      state: state ? state.slice(0, 40) : null,
+      displayName: displayName ? displayName.slice(0, 80) : null,
+      shortName: shortName ? shortName.slice(0, 45) : null,
+      approximateName: approximateName ? approximateName.slice(0, 70) : null,
+      isPrecise: Boolean(street),
+    };
   } catch {
     return null;
   }

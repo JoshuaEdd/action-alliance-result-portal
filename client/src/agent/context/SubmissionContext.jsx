@@ -61,12 +61,31 @@ export function SubmissionProvider({ children }) {
       const pos = await getLocation();
       const { latitude: lat, longitude: lng, accuracy } = pos.coords;
       const capturedAt = new Date().toISOString();
-      const fix = { lat, lng, capturedAt, accuracy };
+      const fix = {
+        lat,
+        lng,
+        capturedAt,
+        accuracy,
+        street: null,
+        placeName: null,
+        approximatePlace: null,
+        shortName: null,
+      };
       setGps(fix);
       setGpsLoading(false);
-      reverseGeocode(lat, lng).then((placeName) => {
-        if (placeName) {
-          setGps((g) => (g ? { ...g, placeName } : g));
+      reverseGeocode(lat, lng).then((geoData) => {
+        if (geoData) {
+          setGps((g) =>
+            g
+              ? {
+                  ...g,
+                  street: geoData.street,
+                  placeName: geoData.displayName,
+                  approximatePlace: geoData.approximateName,
+                  shortName: geoData.shortName,
+                }
+              : g
+          );
         }
       });
       return fix;

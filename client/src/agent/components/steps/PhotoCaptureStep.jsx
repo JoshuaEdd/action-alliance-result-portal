@@ -163,7 +163,7 @@ export default function PhotoCaptureStep() {
                   ) : (
                     <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
                   )}
-                  <span className="chip">{gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}</span>
+                  <span className="chip">{gps.street ? gps.street : gps.placeName ? gps.placeName : gps.approximatePlace ? gps.approximatePlace : `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}</span>
                 </>
               ) : (
                 <span className="chip chip-warn">UNVERIFIED LOCATION</span>
