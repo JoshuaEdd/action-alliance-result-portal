@@ -17,8 +17,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 //  - Every capture stamps its OWN wall-clock time at shutter press (not the
 //    GPS-fix time), so a poor connection can never blur when photos were
 //    actually taken. The timestamp rides along to the server and is also
-//    baked into the photo as a very bold watermark band pair.
-export default function CameraCapture({ label, onCapture, captured, geo, defaultFacing = 'environment' }) {
+//    baked into the photo as a compact bottom watermark strip.
+export default function CameraCapture({ label, onCapture, captured, geo, defaultFacing = 'environment', site = '' }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [error, setError] = useState(null); // { title, detail }
@@ -131,57 +131,50 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
     startCamera(next);
   };
 
-  // ── Very bold watermark ────────────────────────────────────────────
-  // Two full-width solid bands (top + bottom) so nothing can be cropped
-  // out. Sizes scale with image width: ~5% of width for the headline
-  // timestamp, so it stays huge on any resolution.
-  const drawWatermark = (ctx, w, h, capturedAt) => {
+  // ── Subtle single-band watermark ─────────────────────────────────
+  // One compact translucent strip along the bottom: capture time, then
+  // coordinates / place / polling unit when known. No top banner and no
+  // "UNVERIFIED LOCATION" shout — a GPS-less shot simply carries its
+  // timestamp, and the records show the coordinate gap instead.
+  const drawWatermark = (ctx, w, h, capturedAt, site) => {
     const timeStr = capturedAt.toLocaleString('en-GB', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     });
     const coordStr = geo
       ? `LAT ${geo.lat.toFixed(6)}   LON ${geo.lng.toFixed(6)}   ±${Math.round(geo.accuracy)}m`
-      : 'NO GPS FIX';
-    const placeStr = geo?.placeName ? geo.placeName.toUpperCase() : '';
+      : null;
+    const placeStr = geo?.placeName ? geo.placeName.toUpperCase().slice(0, 52) : null;
+    const siteStr = site || null;
+
+    const lines = [timeStr];
+    if (coordStr) lines.push(coordStr);
+    if (placeStr) lines.push(placeStr);
+    if (siteStr) lines.push(siteStr);
 
     ctx.save();
     ctx.textBaseline = 'middle';
 
-    // ── Bottom band: timestamp (huge) + coordinates ──
-    const bigSize = Math.max(30, Math.round(w * 0.052));
-    const midSize = Math.max(20, Math.round(w * 0.034));
-    const pad = Math.round(w * 0.03);
-    const lineGap = Math.round(bigSize * 0.35);
-    const bandH = pad * 1.4 + bigSize + midSize * 2 + lineGap * 2;
+    const pad = Math.round(w * 0.02);
+    const mainSize = Math.max(15, Math.round(w * 0.026)); // timestamp
+    const subSize = Math.max(11, Math.round(w * 0.02));   // coord/place/site
+    const lineGap = Math.round(subSize * 0.45);
+    const bandH = pad * 2 + mainSize + (lines.length - 1) * (subSize + lineGap);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.88)';
+    ctx.fillStyle = 'rgba(11, 16, 35, 0.7)';
     ctx.fillRect(0, h - bandH, w, bandH);
 
-    let y = h - bandH + pad * 0.7 + bigSize / 2;
-    ctx.fillStyle = '#FF9F00'; // AA orange — maximum contrast on black
-    ctx.font = `800 ${bigSize}px "IBM Plex Mono", ui-monospace, monospace`;
+    let y = h - bandH + pad + mainSize / 2;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `700 ${mainSize}px "IBM Plex Mono", ui-monospace, monospace`;
     ctx.fillText(timeStr, pad, y);
 
-    y += bigSize / 2 + lineGap + midSize / 2;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = `700 ${midSize}px "IBM Plex Mono", ui-monospace, monospace`;
-    ctx.fillText(coordStr, pad, y);
-
-    if (placeStr) {
-      y += midSize / 2 + lineGap + midSize / 2;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `700 ${midSize}px "IBM Plex Mono", ui-monospace, monospace`;
-      ctx.fillText(placeStr.slice(0, 48), pad, y);
+    for (let i = 1; i < lines.length; i++) {
+      y += subSize / 2 + lineGap + subSize / 2;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.font = `600 ${subSize}px "IBM Plex Mono", ui-monospace, monospace`;
+      ctx.fillText(lines[i], pad, y);
     }
-
-    // ── Top band: geotag banner ──
-    const topH = Math.max(34, Math.round(w * 0.058));
-    ctx.fillStyle = 'rgba(0,0,0,0.88)';
-    ctx.fillRect(0, 0, w, topH);
-    ctx.fillStyle = '#00E676';
-    ctx.font = `800 ${Math.max(18, Math.round(w * 0.032))}px "IBM Plex Mono", ui-monospace, monospace`;
-    ctx.fillText(geo ? 'GEO-TAGGED CAPTURE' : 'UNVERIFIED LOCATION', pad, topH / 2);
     ctx.restore();
   };
 
@@ -200,7 +193,7 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
 
     // Actual wall-clock time of THIS shutter press — never reused from GPS.
     const capturedAt = new Date();
-    drawWatermark(ctx, canvas.width, canvas.height, capturedAt);
+    drawWatermark(ctx, canvas.width, canvas.height, capturedAt, site);
 
     canvas.toBlob(
       (blob) => {

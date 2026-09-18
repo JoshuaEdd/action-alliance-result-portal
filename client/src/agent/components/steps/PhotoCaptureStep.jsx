@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSubmission } from '../../context/SubmissionContext';
+import { useAuth } from '../../../context/AuthContext';
 import { logCapture } from '../../../api/offlineQueue';
+import { api } from '../../../api/client';
 import CameraCapture from '../CameraCapture';
 import ActionBar from '../ActionBar';
 
@@ -54,11 +56,24 @@ async function reverseGeocode(lat, lng) {
 // A fix fresher than 30s is reused so a returning agent unlocks instantly.
 const COARSE_METERS = 200;
 export default function PhotoCaptureStep() {
+  const { token } = useAuth();
   const { photos, setPhotos, photoMeta, setPhotoMeta, gps, setGps, goNext, goBack } = useSubmission();
   const [previews, setPreviews] = useState({});
   const [locating, setLocating] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
   const [locationError, setLocationError] = useState(null);
+  // The agent's assigned polling unit, burned onto every photo stamp so the
+  // submitted sheet is self-identifying even before it's matched in the DB.
+  const [site, setSite] = useState('');
+
+  useEffect(() => {
+    api
+      .getMyPollingUnit(token)
+      .then((pu) => {
+        if (pu?.name) setSite(`PU ${pu.pu_number} — ${pu.name}`);
+      })
+      .catch(() => {});
+  }, [token]);
   // A single in-flight geolocation watch per step. getCurrentPosition waits
   // for one final, most-accurate reading before returning, which can stall
   // for the full timeout indoors/under tree cover; watchPosition hands back a
@@ -125,8 +140,8 @@ export default function PhotoCaptureStep() {
 
   // Field escape hatch: if this device simply cannot produce a fix (no GPS,
   // permission hard-blocked, insecure origin), the agent can still work. The
-  // photos then stamp "UNVERIFIED LOCATION" / "NO GPS FIX" so the admin can
-  // see at a glance that the capture point is not geotagged.
+  // photos then carry timestamp-only stamps (no coordinates), so the admin
+  // sees at a glance which captures are not geotagged.
   const skipLocation = useCallback(() => {
     if (watchRef.current != null) {
       navigator.geolocation.clearWatch(watchRef.current);
@@ -194,8 +209,8 @@ export default function PhotoCaptureStep() {
                 Continue without location
               </button>
               <p style={{ fontSize: 11, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
-                Photos without a fix are stamped <strong>UNVERIFIED LOCATION</strong> and stand out in
-                verification.
+                Photos without a fix carry timestamp-only stamps — no GPS coordinates — so they stand
+                out in verification.
               </p>
             </div>
           </div>
@@ -224,8 +239,8 @@ export default function PhotoCaptureStep() {
               )
             ) : (
               <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
-                No GPS fix — capture will be stamped <strong>UNVERIFIED LOCATION</strong>. If your phone can
-                share location, go back a step and grant precise access for a geotagged record.
+                No GPS fix — captures will be stamped with the timestamp only. If your phone can share
+                location, go back a step and grant precise access for a geotagged record.
               </p>
             )}
           </>
@@ -240,6 +255,7 @@ export default function PhotoCaptureStep() {
                 onCapture={handleCapture(s.key)}
                 geo={gps}
                 defaultFacing={s.defaultFacing}
+                site={site}
               />
               {photoMeta[s.key] && (
                 <p className="capture-time">
