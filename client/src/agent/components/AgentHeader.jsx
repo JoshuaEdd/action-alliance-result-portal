@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 // Gradient hero header for the agent app with live field-status chips:
 // connectivity, GPS lock state, and how many submissions are still queued
 // on this device waiting for a signal.
-export default function AgentHeader({ gps }) {
+export default function AgentHeader({ gps, locating = false }) {
   const { user, logout } = useAuth();
   const [online, setOnline] = useState(navigator.onLine);
   const [pending, setPending] = useState(0);
@@ -43,8 +43,8 @@ export default function AgentHeader({ gps }) {
         <span className={`chip ${online ? 'chip-ok' : 'chip-warn'}`}>
           <span className="chip-dot" />{online ? 'Online' : 'Offline'}
         </span>
-        <span className={`chip ${gps ? 'chip-ok' : ''}`}>
-          📍 {gps ? `±${Math.round(gps.accuracy)}m` : 'No GPS'}
+        <span className={`chip ${gps ? 'chip-ok' : locating ? 'chip-warn' : ''}`}>
+          📍 {gps ? `±${Math.round(gps.accuracy)}m` : locating ? 'Locating…' : 'No GPS'}
         </span>
         {pending > 0 && <span className="chip chip-warn">⇪ {pending} pending</span>}
       </div>
