@@ -226,7 +226,13 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
             {flashing && <div className="capture-flash" />}
             {!videoReady && !error && <div className="camera-warming">Starting camera…</div>}
           </>
-        ) : null}
+        ) : (
+          <div className="camera-placeholder">
+            <span className="camera-placeholder-icon" aria-hidden="true">📷</span>
+            <span className="camera-placeholder-text">Camera is off</span>
+            <span className="camera-placeholder-hint">Tap &ldquo;Click to Capture&rdquo; below to open the live camera and take this photo.</span>
+          </div>
+        )}
       </div>
       {error && (
         <div className="camera-error">
