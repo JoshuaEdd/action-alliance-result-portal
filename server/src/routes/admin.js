@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import bcrypt from 'bcryptjs';
 import path from 'path';
@@ -6,13 +7,19 @@ import fs from 'fs';
 import { pool } from '../config/db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { audit, logAction } from '../middleware/audit.js';
+import { isAgentPortalActive, setAgentPortalActive } from '../middleware/portal.js';
+import { canTransitionCorrectionStatus, votesToMap } from '../utils/corrections.js';
 
 const router = express.Router();
 const requireAdmin = requireRole('limited_admin', 'verifying_admin', 'chief_admin');
 
 // A submission counts toward compiled totals once accepted — not a
-// duplicate, not flagged for review (FR-4.9, FR-4.10).
-const ACCEPTED = `duplicate_of IS NULL AND status NOT IN ('flagged')`;
+// duplicate, not flagged for review, and not superseded by an approved
+// correction (FR-4.9, FR-4.10, SEC-4). When a correction is approved the
+// ORIGINAL row is archived (superseded_by set) and the corrected result
+// lives in a new successor row that matches this filter — so the compiled
+// totals automatically reflect the approved correction.
+const ACCEPTED = `duplicate_of IS NULL AND status NOT IN ('flagged') AND superseded_by IS NULL`;
 
 // SEC-10 — a limited/verifying admin may be scoped to a single LGA by the
 // Chief Administrator (via user.scope_local_government_id); NULL scope
@@ -189,7 +196,7 @@ router.get('/polling-units/:id', audit('view_pu_detail'), async (req, res) => {
 
   const photos = rows[0].id
     ? (await pool.query(
-        `SELECT id, photo_type, storage_path, mime_type FROM submission_photos WHERE submission_id = $1`,
+        `SELECT id, photo_type, storage_path, mime_type, captured_at FROM submission_photos WHERE submission_id = $1`,
         [rows[0].id]
       )).rows.map((p) => ({ ...p, url: `/api/admin/photos/${p.id}` }))
     : [];
@@ -731,88 +738,347 @@ router.delete('/invite-codes/:id', audit('revoke_invite_code'), async (req, res)
   res.json({ deleted: true });
 });
 
-// ── SEC-4 — correction request workflow (never a direct edit) ──────
-router.post('/correction-requests', audit('create_correction_request'), async (req, res) => {
-  const { submissionId, fieldName, proposedValue, reason } = req.body;
-  if (!submissionId || !fieldName || proposedValue === undefined || !reason) {
-    return res.status(400).json({ error: 'submissionId, fieldName, proposedValue, and reason are required' });
+// ── SEC-4 — correction request review workflow ─────────────────────
+// Admins never get a "save edits" tool for a submitted result; they only
+// review pending correction requests and approve (applies a superseding
+// official result) or reject (original stays untouched). The original
+// submissions row is immutable; every decision is written to the audit log.
+
+function generateReferenceNumber() {
+  return `AA-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+}
+
+const CORRECTION_CONTEXT = `
+    SELECT cr.id, cr.status, cr.reason, cr.created_at, cr.decided_at, cr.rejection_reason,
+           cr.original_registered, cr.original_accredited, cr.original_invalid,
+           cr.original_party_votes, cr.proposed_registered, cr.proposed_accredited,
+           cr.proposed_invalid, cr.proposed_party_votes,
+           cr.request_lat, cr.request_lng, cr.request_place,
+           cr.applied_result_id, cr.requested_by,
+           s.id AS submission_id, s.reference_number, s.created_at AS submitted_at,
+           s.capture_lat, s.capture_lng, s.capture_place, s.captured_at, s.gps_flagged,
+           s.status AS submission_status, s.superseded_by,
+           sr.reference_number AS corrected_reference_number,
+           u.full_name AS agent_name, u.phone_number AS agent_phone,
+           pu.id AS polling_unit_id, pu.name AS pu_name, pu.pu_number,
+           w.name AS ward_name, lg.name AS lga_name,
+           d.full_name AS decided_by_name,
+           EXISTS (SELECT 1 FROM correction_photos cp WHERE cp.correction_request_id = cr.id)
+             AS has_correction_evidence,
+           (SELECT COUNT(*) FROM submission_photos sp WHERE sp.submission_id = s.id)
+             AS original_photo_count
+    FROM correction_requests cr
+    JOIN submissions s ON s.id = cr.submission_id
+    JOIN users u ON u.id = cr.requested_by
+    JOIN polling_units pu ON pu.id = s.polling_unit_id
+    JOIN wards w ON w.id = pu.ward_id
+    JOIN local_governments lg ON lg.id = w.local_government_id
+    LEFT JOIN users d ON d.id = cr.decided_by
+    LEFT JOIN submissions sr ON sr.id = cr.applied_result_id`;
+
+function parseSnapshots(row) {
+  return {
+    ...row,
+    original_party_votes: row.original_party_votes || {},
+    proposed_party_votes: row.proposed_party_votes || {},
+  };
+}
+
+// FR-4.x — the admin correction review queue. Pending requests are always
+// first; each row carries the original + proposed figures, the reason and the
+// full location context so a reviewer can judge it in place.
+router.get('/correction-requests', audit('view_correction_requests'), async (req, res) => {
+  const allowed = ['pending', 'approved', 'rejected'];
+  const status = allowed.includes(req.query.status) ? req.query.status : null;
+  const params = [];
+  let statusFilter = '';
+  if (status) {
+    params.push(status);
+    statusFilter = 'WHERE cr.status = $1';
   }
-  const { rows } = await pool.query(`SELECT * FROM submissions WHERE id = $1`, [submissionId]);
-  const submission = rows[0];
-  if (!submission) return res.status(404).json({ error: 'Submission not found' });
-  if (!(fieldName in submission)) return res.status(400).json({ error: 'Unknown field' });
-
-  const { rows: inserted } = await pool.query(
-    `INSERT INTO correction_requests (submission_id, field_name, original_value, proposed_value, reason, requested_by)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [submissionId, fieldName, String(submission[fieldName]), String(proposedValue), reason, req.user.id]
-  );
-  res.status(201).json(inserted[0]);
-});
-
-router.get('/correction-requests', audit('view_correction_requests'), async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT cr.*, s.reference_number,
-            (SELECT COUNT(*) FROM correction_approvals ca WHERE ca.correction_request_id = cr.id AND ca.approved) AS approvals,
-            (SELECT COUNT(*) FROM users WHERE role IN ('limited_admin','verifying_admin','chief_admin')) AS admins_required
-     FROM correction_requests cr
-     JOIN submissions s ON s.id = cr.submission_id
-     ORDER BY cr.created_at DESC`
+    `${CORRECTION_CONTEXT} ${statusFilter}
+     ORDER BY CASE cr.status WHEN 'pending' THEN 0 ELSE 1 END, cr.created_at DESC
+     LIMIT 200`,
+    params
   );
-  res.json(rows);
+  res.json(rows.map(parseSnapshots));
 });
 
-// SEC-4 — must be approved by *all* administrators in the system, and only
-// verifying/chief admins may record a decision (SEC-10 permission matrix).
+// Full detail for the review screen: everything from the queue plus the
+// original submission's photos and any evidence the agent attached to the
+// correction request, so the admin can compare sheet against proposal.
+router.get('/correction-requests/:id', audit('view_correction_request_detail'), async (req, res) => {
+  const { rows } = await pool.query(`${CORRECTION_CONTEXT} WHERE cr.id = $1`, [req.params.id]);
+  const detail = parseSnapshots(rows[0]);
+  if (!detail) return res.status(404).json({ error: 'Correction request not found' });
+
+  const { rows: originalPhotos } = await pool.query(
+    `SELECT id, photo_type, mime_type, captured_at FROM submission_photos WHERE submission_id = $1`,
+    [detail.submission_id]
+  );
+  const { rows: evidencePhotos } = await pool.query(
+    `SELECT id, mime_type, captured_at FROM correction_photos WHERE correction_request_id = $1`,
+    [detail.id]
+  );
+  const { rows: originalPartyVotes } = await pool.query(
+    `SELECT pp.id AS party_id, pp.name, pp.abbreviation, pp.is_priority, spv.votes
+     FROM submission_party_votes spv
+     JOIN political_parties pp ON pp.id = spv.party_id
+     WHERE spv.submission_id = $1
+     ORDER BY pp.is_priority DESC, pp.display_order ASC`,
+    [detail.submission_id]
+  );
+
+  let correctedPartyVotes = null;
+  if (detail.applied_result_id) {
+    const { rows } = await pool.query(
+      `SELECT pp.id AS party_id, pp.name, pp.abbreviation, pp.is_priority, spv.votes
+       FROM submission_party_votes spv
+       JOIN political_parties pp ON pp.id = spv.party_id
+       WHERE spv.submission_id = $1
+       ORDER BY pp.is_priority DESC, pp.display_order ASC`,
+      [detail.applied_result_id]
+    );
+    correctedPartyVotes = rows;
+  }
+
+  res.json({
+    ...detail,
+    originalPhotos: originalPhotos.map((p) => ({ ...p, url: `/api/admin/photos/${p.id}` })),
+    evidencePhotos: evidencePhotos.map((p) => ({ ...p, url: `/api/admin/correction-photos/${p.id}` })),
+    originalPartyVotes,
+    correctedPartyVotes,
+  });
+});
+
+// SEC-9 — serve correction-request evidence bytes to an authenticated admin.
+router.get('/correction-photos/:id', audit('view_correction_evidence'), async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT data, storage_path, mime_type FROM correction_photos WHERE id = $1`,
+    [req.params.id]
+  );
+  const photo = rows[0];
+  if (!photo) return res.status(404).json({ error: 'Evidence photo not found' });
+  res.setHeader('Content-Type', photo.mime_type);
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (photo.data) return res.send(photo.data);
+  const filePath = path.resolve(photo.storage_path);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Evidence file is missing' });
+  res.sendFile(filePath);
+});
+
+// SEC-4 — decide a pending correction request. Only verifying/chief admins.
+// Rewarding on a TRANSACTION with a row lock so two admins processing the
+// same request cannot both succeed: the request itself is locked FOR UPDATE
+// and must still be 'pending', so the recorded decision — approve OR reject —
+// is the only one that sticks.
+//
+// Approve: creates a superseding submissions row with the corrected figures
+// (the ORIGINAL row is preserved and linked via superseded_by), copies the
+// original capture metadata/evidence onto it, archives the original, and
+// records the decision + audit entry. The originally submitted values remain
+// fully discoverable in the audit history.
+// Reject: original result stays exactly as submitted; the rejection reason is
+// stored and shown to the agent.
 router.post(
   '/correction-requests/:id/decision',
   requireRole('verifying_admin', 'chief_admin'),
   audit('decide_correction_request'),
   async (req, res) => {
-    const { approved } = req.body;
+    const approved = req.body.approved;
+    if (typeof approved !== 'boolean') {
+      return res.status(400).json({ error: 'approved (boolean) is required' });
+    }
+    let rejectionReason = null;
+    if (!approved) {
+      rejectionReason = String(req.body.rejectionReason || '').trim();
+      if (rejectionReason.length < 5) {
+        return res.status(400).json({ error: 'A rejection reason is required so the agent understands the decision.' });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO correction_approvals (correction_request_id, admin_id, approved)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (correction_request_id, admin_id) DO UPDATE SET approved = $3, decided_at = now()`,
-        [req.params.id, req.user.id, !!approved]
-      );
 
-      if (!approved) {
-        await client.query(`UPDATE correction_requests SET status = 'rejected' WHERE id = $1`, [req.params.id]);
-        await client.query('COMMIT');
-        return res.json({ status: 'rejected' });
-      }
-
-      const { rows: countRows } = await client.query(
-        `SELECT
-           (SELECT COUNT(*) FROM users WHERE role IN ('limited_admin','verifying_admin','chief_admin')) AS required,
-           (SELECT COUNT(*) FROM correction_approvals WHERE correction_request_id = $1 AND approved) AS given`,
+      const { rows: crRows } = await client.query(
+        `SELECT cr.*, s.reference_number, s.id AS submission_id
+         FROM correction_requests cr
+         JOIN submissions s ON s.id = cr.submission_id
+         WHERE cr.id = $1
+         FOR UPDATE OF cr`,
         [req.params.id]
       );
-      const { required, given } = countRows[0];
-
-      if (Number(given) >= Number(required)) {
-        // Note: submissions stay immutable rows — recording the approved
-        // correction here is a placeholder; applying it requires a
-        // superseding-record strategy so the original stays untouched,
-        // which should be finalized with the security team before go-live.
-        await client.query(`UPDATE correction_requests SET status = 'approved' WHERE id = $1`, [req.params.id]);
-        await client.query('COMMIT');
-        return res.json({ status: 'approved' });
+      const cr = crRows[0];
+      if (!cr) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Correction request not found' });
+      }
+      const targetStatus = approved ? 'approved' : 'rejected';
+      if (!canTransitionCorrectionStatus(cr.status, targetStatus)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `This correction request has already been ${cr.status}.` });
       }
 
+      if (!approved) {
+        await client.query(
+          `UPDATE correction_requests SET status = 'rejected', decided_by = $1, decided_at = now(), rejection_reason = $2
+           WHERE id = $3`,
+          [req.user.id, rejectionReason, cr.id]
+        );
+        await client.query('COMMIT');
+        await logAction({
+          adminId: req.user.id,
+          action: 'reject_correction_request',
+          targetTable: 'correction_requests',
+          targetId: cr.id,
+          metadata: { referenceNumber: cr.reference_number, rejectionReason: rejectionReason.slice(0, 500) },
+        });
+        return res.json({ status: 'rejected', id: cr.id });
+      }
+
+      // ── APPROVAL: apply the corrected result as the new official one ──
+      const { rows: originalRows } = await client.query(
+        `SELECT * FROM submissions WHERE id = $1 FOR UPDATE`,
+        [cr.submission_id]
+      );
+      const original = originalRows[0];
+      if (!original) {
+        await client.query('ROLLBACK');
+        return res.status(500).json({ error: 'Original submission is missing' });
+      }
+
+      const proposedPartyVotes = votesToMap(cr.proposed_party_votes);
+      const proposedValidVotes = Object.values(proposedPartyVotes).reduce((sum, v) => sum + (v || 0), 0);
+      const proposedTotalVotes = proposedValidVotes + Number(cr.proposed_invalid) || 0;
+
+      // The successor INSERT must never collide with the
+      // one_accepted_submission_per_pu unique index, which still sees the
+      // ORIGINAL row (superseded_by IS NULL) for the same polling unit at
+      // insert time. The original is therefore pointed at ITSELF as a
+      // pre-insert placeholder — a valid FK target that drops it from the
+      // index predicate without referencing a row that does not exist yet —
+      // then re-pointed at the real successor below. All inside this
+      // transaction; the placeholder never commits.
+      const successorId = crypto.randomUUID();
+      await client.query(
+        `UPDATE submissions SET superseded_by = id WHERE id = $1`,
+        [cr.submission_id]
+      );
+
+      const referenceNumber = generateReferenceNumber();
+      await client.query(
+        `INSERT INTO submissions (
+           id, reference_number, polling_unit_id, agent_id,
+           total_registered_voters, total_accredited_voters,
+           total_valid_votes, total_invalid_votes, total_votes,
+           submitting_agent_name, submitting_agent_phone,
+           capture_lat, capture_lng, capture_place, captured_at, gps_flagged, status,
+           corrected_by
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         RETURNING id`,
+        [
+          successorId,
+          referenceNumber,
+          original.polling_unit_id,
+          original.agent_id,
+          cr.proposed_registered,
+          cr.proposed_accredited,
+          proposedValidVotes,
+          cr.proposed_invalid,
+          proposedTotalVotes,
+          original.submitting_agent_name,
+          original.submitting_agent_phone,
+          original.capture_lat,
+          original.capture_lng,
+          original.capture_place,
+          original.captured_at,
+          original.gps_flagged,
+          'submitted',
+          cr.id,
+        ]
+      );
+
+      // The corrected result carries the same capture evidence as the
+      // original (the correction is about figures, not the capture record);
+      // the original submission_photos rows are NOT touched.
+      const { rows: originalPhotos } = await client.query(
+        `SELECT photo_type, data, storage_path, mime_type, size_bytes, captured_at
+         FROM submission_photos WHERE submission_id = $1`,
+        [cr.submission_id]
+      );
+      for (const p of originalPhotos) {
+        await client.query(
+          `INSERT INTO submission_photos (submission_id, photo_type, data, storage_path, mime_type, size_bytes, captured_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [successorId, p.photo_type, p.data, p.storage_path, p.mime_type, p.size_bytes, p.captured_at]
+        );
+      }
+
+      for (const [partyId, votes] of Object.entries(proposedPartyVotes)) {
+        await client.query(
+          `INSERT INTO submission_party_votes (submission_id, party_id, votes) VALUES ($1, $2, $3)`,
+          [successorId, partyId, Math.trunc(Number(votes) || 0)]
+        );
+      }
+
+      // The successor now exists — re-point the original at it for real.
+      await client.query(
+        `UPDATE submissions SET superseded_by = $1 WHERE id = $2`,
+        [successorId, cr.submission_id]
+      );
+
+      await client.query(
+        `UPDATE correction_requests SET status = 'approved', decided_by = $1, decided_at = now(), applied_result_id = $2
+         WHERE id = $3`,
+        [req.user.id, successorId, cr.id]
+      );
+
       await client.query('COMMIT');
-      res.json({ status: 'pending', approvalsGiven: given, approvalsRequired: required });
+      await logAction({
+        adminId: req.user.id,
+        action: 'approve_correction_request',
+        targetTable: 'correction_requests',
+        targetId: cr.id,
+        metadata: {
+          referenceNumber: cr.reference_number,
+          correctedReferenceNumber: referenceNumber,
+          originalSubmissionId: cr.submission_id,
+          successorSubmissionId: successorId,
+        },
+      });
+      return res.json({ status: 'approved', id: cr.id, referenceNumber });
     } catch (err) {
       await client.query('ROLLBACK');
       console.error(err);
-      res.status(500).json({ error: 'Could not record decision' });
+      res.status(500).json({ error: 'Could not record the decision, please retry' });
     } finally {
       client.release();
     }
+  }
+);
+
+// ── Global agent-portal switch — when deactivated, no agent can sign in
+// (423) and no submission can be received. Readable by any admin here;
+// only a chief admin may flip it.
+router.get('/portal-status', audit('view_portal_status'), async (_req, res) => {
+  res.json({ active: await isAgentPortalActive() });
+});
+
+router.patch(
+  '/portal-status',
+  requireRole('chief_admin'),
+  audit('set_portal_status'),
+  async (req, res) => {
+    const active = Boolean(req.body.active);
+    await setAgentPortalActive(active);
+    await logAction({
+      adminId: req.user.id,
+      action: 'set_portal_status',
+      metadata: { active },
+    });
+    res.json({ active });
   }
 );
 

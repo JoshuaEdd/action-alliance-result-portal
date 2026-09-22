@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, Button } from '@heroui/react';
 import { api } from '../../api/client';
 import AaLogo from '../../components/AaLogo';
 
 const STATES = [{ id: 'imo', name: 'Imo State' }]; // portal covers Ahiazu Federal Constituency (Imo)
+const NG_PHONE = /^(\+234|0)[789][01]\d{8}$/;
 
 // Agent self-registration without invite codes or passwords:
-//   1. Identity + polling unit picked from the State → LGA → Ward → PU cascade
-//   2. WebAuthn ceremony links the device fingerprint to the account
-// After this, the agent signs in with email + fingerprint only.
+//   1. Identity (name, email, phone) + polling unit from the State→LGA→Ward→PU
+//      cascade, plus an Email or SMS verification method
+//   2. A verification code is sent to that address; only a validated code
+//      unlocks the fingerprint ceremony (req: verification before biometrics)
+//   3. WebAuthn ceremony links the device fingerprint and completes sign-in —
+//      the account is active once its identity is verified (no admin queue).
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ fullName: '', email: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', phoneNumber: '' });
+  const [verificationMethod, setVerificationMethod] = useState('email');
   const [stateId, setStateId] = useState(STATES[0]?.id || '');
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
@@ -23,11 +28,20 @@ export default function RegisterPage() {
   const [locationError, setLocationError] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [stage, setStage] = useState(''); // progress label during ceremonies
+  const [stage, setStage] = useState('form'); // 'form' | 'verify' | 'enroll'
+  const [stageLabel, setStageLabel] = useState(''); // progress label during ceremonies
+  // Verification-code session, scoped to the account by the server.
+  const [preVerifyToken, setPreVerifyToken] = useState(null);
+  const [destinationMasked, setDestinationMasked] = useState(null);
+  const [code, setCode] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
   // Survives a failed ceremony so "Try again" resumes where it stopped
   // instead of restarting the whole form (the server also accepts email-only
   // recovery if this token expires).
   const [enrollmentToken, setEnrollmentToken] = useState(null);
+  const cooldownRef = useRef(null);
+
+  useEffect(() => () => clearInterval(cooldownRef.current), []);
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -75,6 +89,21 @@ export default function RegisterPage() {
       setError('Enter your email address');
       return false;
     }
+    // SMS verification needs a valid Nigerian phone; it is otherwise optional
+    // but still captured as part of the agent's registration identity.
+    if (verificationMethod === 'sms') {
+      if (!form.phoneNumber.trim()) {
+        setError('Enter the phone number to receive the SMS code');
+        return false;
+      }
+      if (!NG_PHONE.test(form.phoneNumber.trim())) {
+        setError('Enter a valid Nigerian phone number (e.g. 080XXXXXXXX)');
+        return false;
+      }
+    } else if (form.phoneNumber.trim() && !NG_PHONE.test(form.phoneNumber.trim())) {
+      setError('Enter a valid Nigerian phone number (e.g. 080XXXXXXXX)');
+      return false;
+    }
     if (!pollingUnitId) {
       setError('Select your state, local government, ward, and polling unit');
       return false;
@@ -82,21 +111,19 @@ export default function RegisterPage() {
     return true;
   };
 
+  const getRegisteredEmail = () => form.email.trim();
+
   // R2–R4: options → fingerprint scan → verify. Retryable as a unit.
   const runEnrollment = async () => {
-    // Ask the server for creation options; the retained token is preferred,
-    // but email alone recovers an expired session.
-    setStage('Preparing fingerprint scan…');
+    setStageLabel('Preparing fingerprint scan…');
     const { options, challengeToken, enrollmentToken: freshToken } = await api.webauthnRegisterOptions(
       enrollmentToken,
-      form.email.trim()
+      getRegisteredEmail()
     );
-    // The server always mints a fresh enrollment token with the options —
-    // use it for verify even if a retained one exists but has expired.
     const activeToken = freshToken || enrollmentToken;
     if (freshToken) setEnrollmentToken(freshToken);
 
-    setStage('Scan your fingerprint…');
+    setStageLabel('Scan your fingerprint…');
     const { startRegistration } = await import('@simplewebauthn/browser');
     let attestation;
     try {
@@ -109,7 +136,7 @@ export default function RegisterPage() {
       );
     }
 
-    setStage('Linking fingerprint…');
+    setStageLabel('Linking fingerprint…');
     await api.webauthnRegisterVerify(activeToken, challengeToken, attestation);
   };
 
@@ -120,45 +147,161 @@ export default function RegisterPage() {
     // A retry after a mid-ceremony failure skips account creation entirely —
     // the shell already exists; only the fingerprint step is missing.
     const isRetry = !!enrollmentToken;
-    if (isRetry || validateForm()) {
-      if (!isRetry && !pollingUnitId) return;
-      setLoading(true);
-      try {
-        if (!enrollmentToken) {
-          // R1 — create the account shell (or resume an incomplete one)
-          setStage('Creating account…');
-          const data = await api.registerAgent(form.fullName.trim(), form.email.trim(), pollingUnitId);
-          setEnrollmentToken(data.enrollmentToken);
-        }
-        await runEnrollment();
-        navigate('/login', { state: { justRegistered: true, registeredEmail: form.email.trim() } });
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-        setStage('');
-      }
-    }
-  };
-
-  // Explicit retry button handler — same path as submit but never re-creates
-  const handleRetry = async () => {
-    setError(null);
+    if (!isRetry && !validateForm()) return;
     setLoading(true);
     try {
-      await runEnrollment();
-      navigate('/login', { state: { justRegistered: true, registeredEmail: form.email.trim() } });
+      if (!enrollmentToken) {
+        // R1 — create the pending account, get a verification code sent
+        setStageLabel('Sending verification code…');
+        const data = await api.registerAgent({
+          fullName: form.fullName.trim(),
+          email: getRegisteredEmail(),
+          phoneNumber: form.phoneNumber.trim(),
+          pollingUnitId,
+          verificationMethod,
+        });
+        if (data.requiresVerification) {
+          setPreVerifyToken(data.preVerifyToken);
+          setDestinationMasked(data.destinationMasked);
+          setStage('verify');
+          return;
+        }
+        // Already-verified resume — straight to the fingerprint ceremony
+        setEnrollmentToken(data.enrollmentToken);
+        await runEnrollment();
+      } else {
+        await runEnrollment();
+      }
+      navigate('/login', { state: { justRegistered: true, registeredEmail: getRegisteredEmail() } });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
-      setStage('');
+      setStageLabel('');
+    }
+  };
+
+  const handleVerifyCode = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (!preVerifyToken || code.trim().length < 4) {
+      setError('Enter the code you received');
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await api.registerVerifyCode(preVerifyToken, code.trim());
+      setEnrollmentToken(data.enrollmentToken);
+      setStage('enroll');
+      await runEnrollment();
+      navigate('/login', { state: { justRegistered: true, registeredEmail: getRegisteredEmail() } });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setStageLabel('');
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await api.registerResendCode(form.email.trim(), verificationMethod);
+      setPreVerifyToken(data.preVerifyToken);
+      setDestinationMasked(data.destinationMasked);
+      setCode('');
+      setResendCooldown(30);
+      cooldownRef.current = setInterval(() => {
+        setResendCooldown((s) => {
+          if (s <= 1) {
+            clearInterval(cooldownRef.current);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const field = 'block text-sm font-medium mb-1.5';
   const selectCls =
     'w-full min-h-[48px] rounded-xl border-none bg-[var(--paper)] px-3 text-[15px] shadow-inner focus:outline-none';
+  const methodPill = (active) =>
+    `flex-1 min-h-[44px] rounded-xl px-3 text-sm font-semibold border-2 transition-colors ${
+      active ? 'border-[var(--aa-green)] text-[var(--aa-green-dark)] bg-[rgba(0,128,96,0.08)]' : 'border-black/10 text-[var(--muted)]'
+    }`;
+
+  if (stage === 'verify') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-black/5 p-6 pt-8 flex flex-col gap-5">
+          <div className="flex items-center gap-3">
+            <AaLogo size={52} />
+            <div>
+              <h1 className="text-xl m-0 font-bold" style={{ color: 'var(--aa-green-dark)', fontFamily: 'Poppins, var(--font-display)' }}>
+                Action Alliance
+              </h1>
+              <div className="text-[11px] tracking-[0.06em] uppercase text-[var(--muted)]" style={{ fontFamily: 'var(--font-mono)' }}>
+                Verify your contact
+              </div>
+            </div>
+          </div>
+          <p className="text-sm text-[var(--muted)]">
+            We sent a 6-digit code {verificationMethod === 'sms' ? `to ${destinationMasked}` : `to ${destinationMasked}`}. Enter
+            it below to confirm this is really your{' '}
+            {verificationMethod === 'sms' ? 'phone number' : 'email address'}.
+          </p>
+          <form onSubmit={handleVerifyCode} className="flex flex-col gap-4">
+            <div>
+              <label htmlFor="code" className={field}>Verification code</label>
+              <Input
+                id="code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="000000"
+                maxLength={6}
+                required
+                fullWidth
+              />
+            </div>
+            {error && <p className="error-text" role="alert">{error}</p>}
+            <Button type="submit" variant="primary" fullWidth disabled={loading}>
+              {loading ? stageLabel || 'Verifying…' : 'Verify code and continue'}
+            </Button>
+            <button
+              type="button"
+              className="text-sm font-medium text-[var(--accent)] cursor-pointer disabled:opacity-50"
+              onClick={handleResend}
+              disabled={loading || resendCooldown > 0}
+            >
+              {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+            </button>
+            <button
+              type="button"
+              className="text-sm text-[var(--muted)] cursor-pointer"
+              onClick={() => {
+                setStage('form');
+                setPreVerifyToken(null);
+                setDestinationMasked(null);
+                setCode('');
+              }}
+            >
+              ← Change details
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
@@ -175,7 +318,7 @@ export default function RegisterPage() {
           </div>
         </div>
         <p className="text-sm text-[var(--muted)]">
-          No password needed — you'll sign in with your email and your device's fingerprint.
+          No password needed — you'll verify your email or phone with a code, then sign in with your fingerprint.
         </p>
         {enrollmentToken && (
           <div
@@ -212,6 +355,37 @@ export default function RegisterPage() {
               required
               fullWidth
             />
+          </div>
+          <div>
+            <label htmlFor="phoneNumber" className={field}>Phone number {verificationMethod !== 'sms' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(for SMS)</span>}</label>
+            <Input
+              id="phoneNumber"
+              type="tel"
+              value={form.phoneNumber}
+              onChange={(e) => update({ phoneNumber: e.target.value })}
+              placeholder="080XXXXXXXX"
+              disabled={!!enrollmentToken}
+              fullWidth
+            />
+          </div>
+          <div>
+            <span className={field}>How do you want to receive the verification code?</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={methodPill(verificationMethod === 'email')}
+                onClick={() => setVerificationMethod('email')}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                className={methodPill(verificationMethod === 'sms')}
+                onClick={() => setVerificationMethod('sms')}
+              >
+                SMS
+              </button>
+            </div>
           </div>
 
           <fieldset className="border-0 p-0 m-0 flex flex-col gap-3">
@@ -278,15 +452,19 @@ export default function RegisterPage() {
             </select>
           </fieldset>
 
+          <p className="text-xs text-[var(--muted)] leading-relaxed">
+            Complete identity verification to receive your account and begin submitting results.
+          </p>
+
           {error && <p className="error-text" role="alert">{error}</p>}
           <Button type="submit" variant="primary" fullWidth disabled={loading}>
             {loading
-              ? stage || 'Working…'
+              ? stageLabel || 'Working…'
               : enrollmentToken
                 ? error
                   ? 'Try fingerprint again'
                   : 'Scan my fingerprint'
-                : 'Create account with fingerprint'}
+                : 'Create account and send code'}
           </Button>
         </form>
         <p className="text-sm text-center text-[var(--muted)]">

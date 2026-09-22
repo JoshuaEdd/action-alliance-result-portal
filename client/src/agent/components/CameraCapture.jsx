@@ -78,11 +78,11 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
       const named = {
         NotAllowedError: {
           title: 'Camera permission blocked',
-          detail: 'Allow camera access for this site (tap the lock/camera icon in the address bar), then tap Open camera again.',
+          detail: 'Allow camera access for this site (tap the lock/camera icon in the address bar), then tap Click to Capture again.',
         },
         PermissionDeniedError: {
           title: 'Camera permission blocked',
-          detail: 'Allow camera access for this site (tap the lock/camera icon in the address bar), then tap Open camera again.',
+          detail: 'Allow camera access for this site (tap the lock/camera icon in the address bar), then tap Click to Capture again.',
         },
         NotFoundError: {
           title: 'No camera found',
@@ -94,11 +94,11 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
         },
         NotReadableError: {
           title: 'Camera is busy',
-          detail: 'Another app is using the camera. Close it, then tap Open camera again.',
+          detail: 'Another app is using the camera. Close it, then tap Click to Capture again.',
         },
         TrackStartError: {
           title: 'Camera is busy',
-          detail: 'Another app is using the camera. Close it, then tap Open camera again.',
+          detail: 'Another app is using the camera. Close it, then tap Click to Capture again.',
         },
       };
       setError(named[err?.name] || {
@@ -198,7 +198,7 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          setError({ title: 'Capture failed', detail: 'The photo could not be processed. Tap Open camera and try again.' });
+          setError({ title: 'Capture failed', detail: 'The photo could not be processed. Tap Click to Capture and try again.' });
           return;
         }
         streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -252,7 +252,7 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
           </>
         ) : (
           <button type="button" className="btn btn-primary" onClick={() => startCamera()} disabled={!!supportError}>
-            Open camera
+            Click to Capture
           </button>
         )}
       </div>

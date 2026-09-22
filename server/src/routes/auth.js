@@ -11,6 +11,12 @@ import {
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import { pool } from '../config/db.js';
 import { generateOtp, hashOtp, verifyOtpHash, deliverOtp } from '../utils/otp.js';
+import { requireAuth } from '../middleware/auth.js';
+import {
+  isAgentPortalActive,
+  requireAgentPortalActive,
+  PORTAL_INACTIVE_MESSAGE,
+} from '../middleware/portal.js';
 
 const router = express.Router();
 
@@ -26,6 +32,7 @@ const LOCKOUT_MINUTES = Number(process.env.LOGIN_LOCKOUT_MINUTES || 15);
 const MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 5);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NG_PHONE_RE = /^(\+234|0)[789][01]\d{8}$/;
 
 // ── WebAuthn relying-party configuration ────────────────────────────
 // On Render, RENDER_EXTERNAL_URL is injected automatically; locally the
@@ -52,9 +59,12 @@ function verifySigned(token, stage) {
 }
 
 async function loadAgentByEmail(email) {
+  // Returns the row regardless of activation so the caller can differentiate
+  // "under review", "rejected", and "deactivated" with specific errors instead
+  // of a generic 404.
   const { rows } = await pool.query(
     `SELECT * FROM users
-     WHERE email = $1 AND role = 'agent' AND is_active = TRUE AND deleted_at IS NULL`,
+     WHERE email = $1 AND role = 'agent' AND deleted_at IS NULL`,
     [email]
   );
   return rows[0] || null;
@@ -62,40 +72,123 @@ async function loadAgentByEmail(email) {
 
 // An "incomplete" agent account has no fingerprint credential yet — it can't
 // sign in and is safe to resume: the person who controls the email is the
-// only one who can ever finish enrolling it.
+// only one who can ever finish enrolling it. Excludes rejected registrations
+// (those must not be silently revived).
 async function findIncompleteAgentByEmail(email) {
   const { rows } = await pool.query(
     `SELECT u.* FROM users u
-     WHERE u.email = $1 AND u.role = 'agent' AND u.is_active = TRUE AND u.deleted_at IS NULL
+     WHERE u.email = $1 AND u.role = 'agent' AND u.deleted_at IS NULL
+       AND u.registration_status <> 'rejected'
        AND NOT EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.id)`,
     [email]
   );
   return rows[0] || null;
 }
 
+function hasFingerprint(userId) {
+  return pool
+    .query(`SELECT 1 FROM webauthn_credentials WHERE user_id = $1 LIMIT 1`, [userId])
+    .then(({ rows }) => rows.length > 0);
+}
+
 function mintEnrollmentToken(userId) {
   return signChallenge({ id: userId, stage: 'enroll' }, '10m');
 }
 
+// Hides almost everything about the destination while keeping it recognizable:
+// "ab***@gmail.com" or "+234****4321".
+function maskEmail(email) {
+  if (!email) return '';
+  const at = email.indexOf('@');
+  if (at <= 1) return email;
+  const name = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  return `${name.slice(0, 2)}${'*'.repeat(Math.max(name.length - 2, 0))}@${domain}`;
+}
+function maskPhone(phone) {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 6) return `${'*'.repeat(Math.max(1, digits.length - 2))}${digits.slice(-2)}`;
+  return `${phone.slice(0, Math.min(3, phone.length - 4))}****${digits.slice(-4)}`;
+}
+
+// Generates + stores + delivers a registration-verification OTP, then hands the
+// client a short-lived token scoping the verify step to this user only.
+async function sendRegistrationOtp({ res, userId, channel, email, phone, extra = {} }) {
+  const destination = channel === 'sms' ? phone : email;
+  if (!destination) {
+    return res.status(400).json({
+      error: channel === 'sms' ? 'No phone number available for SMS verification' : 'No email address available for verification',
+    });
+  }
+  const code = generateOtp();
+  const codeHash = await hashOtp(code);
+  await pool.query(
+    `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
+     VALUES ($1, $2, 'registration_verify', now() + ($3 || ' minutes')::interval)`,
+    [userId, codeHash, OTP_TTL_MINUTES]
+  );
+  await deliverOtp({ destination, code, channel });
+  const preVerifyToken = signChallenge({ id: userId, stage: 'reg_verify' }, '15m');
+  return res.status(200).json({
+    requiresVerification: true,
+    preVerifyToken,
+    channel,
+    destinationMasked: channel === 'sms' ? maskPhone(phone) : maskEmail(email),
+    ...extra,
+  });
+}
+
+// Null when the agent is cleared to sign in, otherwise the HTTP status +
+// message that explains *why* they are blocked.
+function agentLoginBlock(user, { portalActive }) {
+  if (!portalActive) return { status: 423, message: PORTAL_INACTIVE_MESSAGE };
+  if (user.registration_status === 'pending') {
+    return {
+      status: 423,
+      message: 'Your registration is under review by an administrator. You can sign in once it is approved.',
+    };
+  }
+  if (user.registration_status === 'rejected') {
+    return { status: 403, message: 'This registration was not approved. Contact an administrator.' };
+  }
+  if (!user.is_active) {
+    return { status: 403, message: 'This account has been deactivated.' };
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // AGENT REGISTRATION — no invite codes, no passwords.
-// The agent picks their polling unit from the location cascade and links
-// their account to their device fingerprint via a WebAuthn ceremony.
-// One-agent-per-PU stays enforced by the DB's unique partial index.
+// The agent picks their polling unit from the location cascade, chooses an
+// Email or SMS verification method, validates a code sent to that address,
+// then links their device fingerprint via a WebAuthn ceremony. New accounts
+// start active ('accepted') once identity is verified — there is no manual
+// admin acceptance queue; 'pending' only exists for legacy registrations.
 // ─────────────────────────────────────────────────────────────────────
 
-// STEP R1 — create the account shell (or RESUME an incomplete one), hand
-// back an enrollment token. A failed fingerprint scan, expired session, or
-// dropped connection after this point never locks the agent out: they can
-// re-submit this same form and pick up where they left off.
+// STEP R1 — validate identity + location, create the account shell (never a
+// duplicate), and send a verification code to the chosen Email/SMS channel.
+// Also RESUME an incomplete registration whose code was already validated.
 router.post('/register', loginLimiter, async (req, res) => {
-  const { fullName, email, pollingUnitId } = req.body;
-  if (!fullName || !email || !pollingUnitId) {
-    return res.status(400).json({ error: 'fullName, email, and pollingUnitId are required' });
+  const { fullName, email, phoneNumber, pollingUnitId, verificationMethod } = req.body;
+  if (!fullName || !email || !pollingUnitId || !verificationMethod) {
+    return res
+      .status(400)
+      .json({ error: 'fullName, email, pollingUnitId, and verificationMethod are required' });
+  }
+  if (!['email', 'sms'].includes(verificationMethod)) {
+    return res.status(400).json({ error: 'verificationMethod must be "email" or "sms"' });
   }
   const normalizedEmail = String(email).trim().toLowerCase();
   if (!EMAIL_RE.test(normalizedEmail)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  // A phone is always captured when available (it is part of the agent's
+  // registration identity for later submissions) but is REQUIRED for SMS.
+  const phone = phoneNumber ? String(phoneNumber).trim() : null;
+  if (verificationMethod === 'sms' && !NG_PHONE_RE.test(phone || '')) {
+    return res.status(400).json({ error: 'Enter a valid Nigerian phone number for SMS verification' });
   }
 
   const { rows: puRows } = await pool.query(`SELECT id FROM polling_units WHERE id = $1`, [pollingUnitId]);
@@ -103,54 +196,173 @@ router.post('/register', loginLimiter, async (req, res) => {
     return res.status(404).json({ error: 'Polling unit not recognized' });
   }
 
-  // Retry path: the email belongs to an account whose fingerprint enrollment
-  // never completed. Refresh its details and hand back a fresh token instead
-  // of rejecting with "account exists".
-  const incomplete = await findIncompleteAgentByEmail(normalizedEmail);
-  if (incomplete) {
+  // Duplicate check (req: prevent duplicate email AND duplicate polling unit).
+  // The one-agent-per-PU partial unique index below is the authoritative guard
+  // against concurrent registrations racing for the same unit.
+  const { rows: existingRows } = await pool.query(
+    `SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL`,
+    [normalizedEmail]
+  );
+  const existing = existingRows[0];
+
+  if (existing) {
+    if (existing.role !== 'agent') {
+      return res.status(409).json({ error: 'This email address is already used by another account' });
+    }
+    if (existing.registration_status === 'rejected') {
+      return res.status(403).json({ error: 'This registration was not approved. Contact an administrator.' });
+    }
+    const enrolled = await hasFingerprint(existing.id);
+    if (enrolled) {
+      // A completed account — an actual duplicate registration attempt.
+      return res.status(409).json({
+        error:
+          existing.registration_status === 'pending'
+            ? 'This email is already registered and its application is pending review.'
+            : 'This email is already registered — sign in with your fingerprint instead.',
+      });
+    }
+
+    // Incomplete account (never finished fingerprinting) — resume it.
     try {
       await pool.query(
-        `UPDATE users SET full_name = $1, assigned_polling_unit_id = $2, location_locked = TRUE WHERE id = $3`,
-        [String(fullName).trim(), pollingUnitId, incomplete.id]
+        `UPDATE users SET full_name = $1, phone_number = COALESCE($2, phone_number),
+                assigned_polling_unit_id = $3, location_locked = TRUE
+         WHERE id = $4`,
+        [String(fullName).trim(), phone, pollingUnitId, existing.id]
       );
-      return res.status(200).json({
-        enrollmentToken: mintEnrollmentToken(incomplete.id),
-        resumed: true,
-        message: 'Finishing fingerprint setup for your existing account.',
-      });
     } catch (err) {
       if (err.code === '23505') {
-        return res.status(409).json({ error: 'This polling unit already has an agent' });
+        return res.status(409).json({
+          error: /polling_unit|one_agent_per_polling_unit/i.test(err.constraint || '')
+            ? 'This polling unit already has an agent'
+            : 'This phone number is already registered to another account',
+        });
       }
       console.error(err);
       return res.status(500).json({ error: 'Could not update account, please retry' });
     }
+
+    // Original registration already completed validation — skip straight to
+    // the fingerprint ceremony (which itself requires the verified flag).
+    if (existing.registration_verified_at) {
+      return res.status(200).json({
+        enrollmentToken: mintEnrollmentToken(existing.id),
+        verified: true,
+        resumed: true,
+        message: 'Identity verified previously — finish with your fingerprint.',
+      });
+    }
+    return sendRegistrationOtp({
+      res,
+      userId: existing.id,
+      channel: verificationMethod,
+      email: normalizedEmail,
+      phone,
+      extra: { resumed: true },
+    });
   }
 
+  let userId;
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO users (role, full_name, email, password_hash, assigned_polling_unit_id, location_locked)
-       VALUES ('agent', $1, $2, NULL, $3, TRUE)
-       RETURNING id`,
-      [String(fullName).trim(), normalizedEmail, pollingUnitId]
+// New agents are accepted once their identity (email/SMS) is verified —
+      // there is no manual admin acceptance queue, so the account starts
+      // active and the fingerprint ceremony below completes sign-in.
+      const { rows } = await pool.query(
+        `INSERT INTO users (role, full_name, email, phone_number, password_hash,
+                            assigned_polling_unit_id, location_locked, registration_status)
+         VALUES ('agent', $1, $2, $3, NULL, $4, TRUE, 'accepted')
+         RETURNING id`,
+      [String(fullName).trim(), normalizedEmail, phone, pollingUnitId]
     );
-    // Short-lived token binding the WebAuthn ceremony to this fresh account
-    res.status(201).json({
-      enrollmentToken: mintEnrollmentToken(rows[0].id),
-      message: 'Account created — scan your fingerprint to finish.',
-    });
+    userId = rows[0].id;
   } catch (err) {
     if (err.code === '23505') {
-      const puTaken = /polling_unit/i.test(err.constraint || '');
+      const constraint = err.constraint || '';
+      if (/polling_unit|one_agent_per_polling_unit/i.test(constraint)) {
+        return res.status(409).json({ error: 'This polling unit already has an agent' });
+      }
+      if (/phone/i.test(constraint)) {
+        return res.status(409).json({ error: 'This phone number is already registered to another account' });
+      }
       return res.status(409).json({
-        error: puTaken
-          ? 'This polling unit already has an agent'
-          : 'This email is already registered — sign in with your fingerprint instead',
+        error: 'This email is already registered — sign in with your fingerprint instead',
       });
     }
     console.error(err);
-    res.status(500).json({ error: 'Could not create account, please retry' });
+    return res.status(500).json({ error: 'Could not create account, please retry' });
   }
+
+  // New registration — send its first verification code.
+  return sendRegistrationOtp({
+    res,
+    userId,
+    channel: verificationMethod,
+    email: normalizedEmail,
+    phone,
+  });
+});
+
+// STEP R1b — resend the registration verification code (handles expired /
+// lost codes without re-creating the identity or a duplicate OTP record).
+router.post('/register/resend-code', loginLimiter, async (req, res) => {
+  const { email, verificationMethod } = req.body;
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  if (!['email', 'sms'].includes(verificationMethod)) {
+    return res.status(400).json({ error: 'verificationMethod must be "email" or "sms"' });
+  }
+
+  const incomplete = await findIncompleteAgentByEmail(normalizedEmail);
+  if (!incomplete) {
+    return res.status(404).json({ error: 'No pending registration found for this email. Please register again.' });
+  }
+  if (incomplete.registration_verified_at) {
+    return res.status(409).json({ error: 'This registration is already verified — continue to fingerprint setup.' });
+  }
+  return sendRegistrationOtp({
+    res,
+    userId: incomplete.id,
+    channel: verificationMethod,
+    email: normalizedEmail,
+    phone: incomplete.phone_number,
+    extra: { resumed: true },
+  });
+});
+
+// STEP R1c — validate the code. Only after a successful validation is the
+// fingerprint ceremony ever offered; a fresh enrollment token is minted here.
+router.post('/register/verify-code', loginLimiter, async (req, res) => {
+  const { preVerifyToken, code } = req.body;
+  if (!preVerifyToken || !code) {
+    return res.status(400).json({ error: 'preVerifyToken and code are required' });
+  }
+
+  const payload = verifySigned(preVerifyToken, 'reg_verify');
+  if (!payload) {
+    return res.status(401).json({ error: 'Verification session expired — request a new code' });
+  }
+
+  const { rows } = await pool.query(
+    `SELECT * FROM otp_codes
+     WHERE user_id = $1 AND purpose = 'registration_verify' AND consumed_at IS NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [payload.id]
+  );
+  const otpRow = rows[0];
+  if (!otpRow || new Date(otpRow.expires_at) < new Date()) {
+    return res.status(401).json({ error: 'Code expired, request a new one' });
+  }
+
+  const ok = await verifyOtpHash(String(code), otpRow.code_hash);
+  if (!ok) return res.status(401).json({ error: 'Incorrect code' });
+
+  await pool.query(`UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, [otpRow.id]);
+  await pool.query(`UPDATE users SET registration_verified_at = now() WHERE id = $1`, [payload.id]);
+
+  res.json({ verified: true, enrollmentToken: mintEnrollmentToken(payload.id) });
 });
 
 // STEP R2 — WebAuthn creation options for the fingerprint enrollment.
@@ -173,11 +385,22 @@ router.post('/webauthn/register/options', loginLimiter, async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT id, email, full_name FROM users WHERE id = $1 AND role = 'agent' AND is_active = TRUE`,
+    `SELECT id, email, full_name, registration_verified_at, registration_status FROM users
+     WHERE id = $1 AND role = 'agent'`,
     [enroll.id]
   );
   const user = rows[0];
   if (!user) return res.status(404).json({ error: 'Account not found' });
+  if (user.registration_status === 'rejected') {
+    return res.status(403).json({ error: 'This registration was not approved. Contact an administrator.' });
+  }
+  // The verification code must be validated BEFORE the fingerprint ceremony —
+  // the server refuses to even mint options for an unverified account.
+  if (!user.registration_verified_at) {
+    return res
+      .status(403)
+      .json({ error: 'Please verify your email or phone first — a verification code was sent to you.' });
+  }
 
   // Re-enrolling the same device replaces its credential instead of failing
   const { rows: existing } = await pool.query(
@@ -218,6 +441,21 @@ router.post('/webauthn/register/verify', loginLimiter, async (req, res) => {
   }
   if (chal.uid !== enroll.id) {
     return res.status(401).json({ error: 'Enrollment session mismatch — please register again' });
+  }
+
+  // The verification-code gate holds here too — never persist a credential
+  // for an account whose email/phone was not validated.
+  const { rows: userRows } = await pool.query(
+    `SELECT registration_verified_at, registration_status FROM users WHERE id = $1 AND role = 'agent'`,
+    [enroll.id]
+  );
+  const enrollUser = userRows[0];
+  if (!enrollUser) return res.status(404).json({ error: 'Account not found' });
+  if (enrollUser.registration_status === 'rejected') {
+    return res.status(403).json({ error: 'This registration was not approved. Contact an administrator.' });
+  }
+  if (!enrollUser.registration_verified_at) {
+    return res.status(403).json({ error: 'Please verify your email or phone first — a verification code was sent to you.' });
   }
 
   let verification;
@@ -261,7 +499,42 @@ router.post('/webauthn/register/verify', loginLimiter, async (req, res) => {
     ]
   );
 
-  res.json({ verified: true, message: 'Fingerprint linked — you can now sign in.' });
+  res.json({ verified: true, message: 'Fingerprint linked — your account is ready. Sign in from the Agent tab.' });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// AGENT PORTAL STATE — public read so the agent UI can show "temporarily
+// unavailable" without guessing; enforcement is server-side regardless.
+// ─────────────────────────────────────────────────────────────────────
+router.get('/portal-status', async (_req, res) => {
+  res.json({ active: await isAgentPortalActive() });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// AUTHENTICATED PROFILE — the agent's registration record (name, phone,
+// email, assigned PU) is the single source of truth used by later workflow
+// steps; the app never asks for this information again (req: do not re-ask).
+// ─────────────────────────────────────────────────────────────────────
+router.get('/me', requireAuth, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, full_name, email, phone_number, role, assigned_polling_unit_id,
+            location_locked, registration_status, scope_local_government_id
+     FROM users WHERE id = $1`,
+    [req.user.id]
+  );
+  const u = rows[0];
+  if (!u) return res.status(404).json({ error: 'Account not found' });
+  res.json({
+    id: u.id,
+    fullName: u.full_name,
+    email: u.email,
+    phoneNumber: u.phone_number,
+    role: u.role,
+    assignedPollingUnitId: u.assigned_polling_unit_id,
+    locationLocked: u.location_locked,
+    registrationStatus: u.registration_status,
+    scopeLocalGovernmentId: u.scope_local_government_id,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -269,7 +542,7 @@ router.post('/webauthn/register/verify', loginLimiter, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 
 // STEP L1 — look up the account, request an assertion from its credentials
-router.post('/webauthn/login/options', loginLimiter, async (req, res) => {
+router.post('/webauthn/login/options', loginLimiter, requireAgentPortalActive, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'email is required' });
 
@@ -277,6 +550,11 @@ router.post('/webauthn/login/options', loginLimiter, async (req, res) => {
   if (!user) {
     return res.status(404).json({ error: 'No fingerprint account found for this email' });
   }
+
+  // Pending / rejected / deactivated accounts and a globally-deactivated
+  // portal all get a specific, honest reason (server-enforced, not just UI).
+  const blocked = agentLoginBlock(user, { portalActive: await isAgentPortalActive() });
+  if (blocked) return res.status(blocked.status).json({ error: blocked.message });
 
   const { rows: creds } = await pool.query(
     `SELECT id, transports FROM webauthn_credentials WHERE user_id = $1`,
@@ -309,6 +587,12 @@ router.post('/webauthn/login/verify', loginLimiter, async (req, res) => {
 
   const user = await loadAgentByEmail(String(email || '').trim().toLowerCase());
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  // Re-check here as well — the portal could be deactivated or the admin
+  // review decided between the options call (L1) and the fingerprint being
+  // presented at verify (L2).
+  const blocked = agentLoginBlock(user, { portalActive: await isAgentPortalActive() });
+  if (blocked) return res.status(blocked.status).json({ error: blocked.message });
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     const minsLeft = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);

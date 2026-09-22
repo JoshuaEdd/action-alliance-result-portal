@@ -37,9 +37,18 @@ async function request(path, { method = 'GET', body, token, isForm = false } = {
 
 export const api = {
   // --- shared auth ---
-  // Agent registration: account shell + WebAuthn fingerprint enrollment
-  registerAgent: (fullName, email, pollingUnitId) =>
-    request('/auth/register', { method: 'POST', body: { fullName, email, pollingUnitId } }),
+  // Agent registration: creates the pending account and sends a verification
+  // code (Email or SMS). Returns { requiresVerification, preVerifyToken, ... }
+  // or { verified: true, enrollmentToken } for a resumed, already-verified
+  // registration. No phone/SMS for legacy invite-code registrations.
+  registerAgent: (payload) => request('/auth/register', { method: 'POST', body: payload }),
+  // Confirm the code sent to the chosen channel — unlocks fingerprint setup.
+  registerVerifyCode: (preVerifyToken, code) =>
+    request('/auth/register/verify-code', { method: 'POST', body: { preVerifyToken, code } }),
+  registerResendCode: (email, verificationMethod) =>
+    request('/auth/register/resend-code', { method: 'POST', body: { email, verificationMethod } }),
+  getPortalStatus: () => request('/auth/portal-status'),
+  getMe: (token) => request('/auth/me', { token }),
   webauthnRegisterOptions: (enrollmentToken, email) =>
     request('/auth/webauthn/register/options', { method: 'POST', body: { enrollmentToken, email } }),
   webauthnRegisterVerify: (enrollmentToken, challengeToken, response) =>
@@ -67,6 +76,12 @@ export const api = {
     request('/submissions', { method: 'POST', token, body: formData, isForm: true }),
   getMySubmission: (token, referenceNumber) =>
     request(`/submissions/mine/${referenceNumber}`, { token }),
+  getMySubmissions: (token) => request('/submissions/mine', { token }),
+  // SEC-4 — report a mistake in an already-submitted result. The body is a
+  // multipart form (proposed figures + reason + optional evidencePhoto); the
+  // original result is never overwritten by this call.
+  requestCorrection: (token, submissionId, formData) =>
+    request(`/submissions/${submissionId}/correction-request`, { method: 'POST', token, body: formData, isForm: true }),
 
   // --- admin: summary & drill-down ---
   getSummary: (token) => request('/admin/summary', { token }),
@@ -98,12 +113,30 @@ export const api = {
     request(`/admin/export/pdf/polling-units/${pollingUnitId}`, { token }),
   exportWardPdf: (token, wardId) => request(`/admin/export/pdf/ward/${wardId}`, { token }),
 
-  // --- admin: corrections ---
-  getCorrectionRequests: (token) => request('/admin/correction-requests', { token }),
-  createCorrectionRequest: (token, payload) =>
-    request('/admin/correction-requests', { method: 'POST', token, body: payload }),
-  decideCorrectionRequest: (token, id, approved) =>
-    request(`/admin/correction-requests/${id}/decision`, { method: 'POST', token, body: { approved } }),
+  // --- admin: corrections (SEC-4 review workflow) ---
+  getCorrectionRequests: (token, status) =>
+    request(`/admin/correction-requests${status ? `?status=${status}` : ''}`, { token }),
+  getCorrectionDetail: (token, id) => request(`/admin/correction-requests/${id}`, { token }),
+  getCorrectionPhotoUrl: async (token, photoId) => {
+    const res = await fetch(`${BASE_URL}/admin/correction-photos/${photoId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401 && token) handleUnauthorized();
+    if (!res.ok) throw new Error('Failed to load evidence photo');
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
+  decideCorrection: (token, id, approved, rejectionReason) =>
+    request(`/admin/correction-requests/${id}/decision`, {
+      method: 'POST',
+      token,
+      body: { approved, rejectionReason },
+    }),
+
+  // --- admin: global agent-portal switch ---
+  getAdminPortalStatus: (token) => request('/admin/portal-status', { token }),
+  setAdminPortalStatus: (token, active) =>
+    request('/admin/portal-status', { method: 'PATCH', token, body: { active } }),
 
   // --- admin: accounts ---
   getAdmins: (token) => request('/admin/admins', { token }),

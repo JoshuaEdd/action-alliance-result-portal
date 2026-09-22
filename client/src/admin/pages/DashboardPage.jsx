@@ -10,12 +10,15 @@ import MassInviteCodesButton from '../components/MassInviteCodesButton';
 import AaLogo from '../../components/AaLogo';
 
 export default function DashboardPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
   const [lgas, setLgas] = useState([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
+  const [portalActive, setPortalActive] = useState(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [portalMessage, setPortalMessage] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -38,6 +41,27 @@ export default function DashboardPage() {
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
   }, [load]);
+
+  // Mirror the server-side portal switch so the admin sees its true state.
+  useEffect(() => {
+    api.getAdminPortalStatus(token).then(({ active }) => setPortalActive(active)).catch(() => {});
+  }, [token]);
+
+  const togglePortal = async () => {
+    setPortalBusy(true);
+    setPortalMessage(null);
+    try {
+      const { active } = await api.setAdminPortalStatus(token, !portalActive);
+      setPortalActive(active);
+      setPortalMessage({ ok: true, text: `Agent portal is now ${active ? 'ACTIVE' : 'DEACTIVATED'}.` });
+    } catch (err) {
+      setPortalMessage({ ok: false, text: err.message });
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const canTogglePortal = user?.role === 'chief_admin';
 
   const runSearch = async (value) => {
     const q = String(value ?? '').trim();
@@ -65,6 +89,38 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {portalActive !== null && (
+        <div className="stat-card" style={{ marginBottom: 24, borderLeft: `4px solid ${portalActive ? 'var(--field-green-dark)' : 'var(--error-red)'}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div className="label">Agent portal (global switch)</div>
+              <div className="value" style={{ fontSize: 18, fontFamily: 'var(--font-mono)', color: portalActive ? 'var(--field-green-dark)' : 'var(--error-red)' }}>
+                {portalActive ? 'ACTIVE' : 'DEACTIVATED'}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 4 }}>
+                {portalActive
+                  ? 'Agents can sign in and submit results.'
+                  : 'Agents are blocked from signing in and submitting until this is reactivated.'}
+              </div>
+            </div>
+            {canTogglePortal && (
+              <Button
+                className={portalActive ? 'btn btn-danger' : 'btn btn-primary'}
+                isDisabled={portalBusy}
+                onPress={togglePortal}
+              >
+                {portalBusy ? 'Updating…' : portalActive ? 'Deactivate portal' : 'Activate portal'}
+              </Button>
+            )}
+          </div>
+          {portalMessage && (
+            <p className="error-text" style={{ color: portalMessage.ok ? 'var(--field-green-dark)' : 'var(--error-red)', marginTop: 10 }}>
+              {portalMessage.text}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="w-full max-w-xl mb-6">
         <SearchField

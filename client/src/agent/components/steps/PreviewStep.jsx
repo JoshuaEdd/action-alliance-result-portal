@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useSubmission } from '../../context/SubmissionContext';
 import { api } from '../../../api/client';
@@ -10,9 +10,14 @@ const SLOTS = [
   { key: 'agentPassportPhoto', label: 'Passport photo' },
 ];
 
+const fmt = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+};
+
 export default function PreviewStep() {
   const { token } = useAuth();
-  const { draft, partyVotes, photos, photoMeta, goBack, submit, submitting, submitError } = useSubmission();
+  const { draft, partyVotes, photos, photoMeta, gps, goBack, submit, submitting, submitError } = useSubmission();
   const [previewStage, setPreviewStage] = useState(0); // 0 = data, 1 = parties, 2 = photos
   const [parties, setParties] = useState([]);
 
@@ -20,8 +25,20 @@ export default function PreviewStep() {
     api.getParties(token).then(setParties).catch(() => {});
   }, [token]);
 
+  // Object URLs for the captured blobs, memoized so they aren't recreated on
+  // every render (revoked only when the photo set changes).
+  const photoUrls = useMemo(() => {
+    const urls = {};
+    for (const { key } of SLOTS) {
+      if (photos[key]) urls[key] = URL.createObjectURL(photos[key]);
+    }
+    return urls;
+  }, [photos]);
+
   const totalValidVotes = parties.reduce((sum, p) => sum + (Number(partyVotes[p.id]) || 0), 0);
   const totalInvalidVotes = Number(draft.totalInvalidVotes) || 0;
+
+  const capturePlace = gps?.placeName || gps?.approximatePlace || (gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : null);
 
   const dataRows = [
     ['Registered voters', draft.totalRegisteredVoters],
@@ -31,6 +48,8 @@ export default function PreviewStep() {
     ['Total votes', totalValidVotes + totalInvalidVotes],
     ['Agent name', draft.submittingAgentName],
     ['Agent phone', draft.submittingAgentPhone],
+    ['Capture place', capturePlace],
+    ['Captured at', gps ? fmt(gps.capturedAt) : null],
   ];
 
   return (
@@ -70,18 +89,29 @@ export default function PreviewStep() {
         )}
 
         {previewStage === 2 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          <div style={{ marginBottom: 8 }}>
+            <span className="chip chip-ok">Location: {capturePlace || 'No location (blocked)'}</span>{' '}
+            {gps && <span className="chip">Captured {fmt(gps.capturedAt)}</span>}
+          </div>
+        )}
+
+        {previewStage === 2 && (
+          <div className="preview-photos">
             {SLOTS.map((s) => (
-              <div key={s.key}>
-                <div className="camera-frame" style={{ aspectRatio: '3/4' }}>
-                  {photos[s.key] && <img src={URL.createObjectURL(photos[s.key])} alt={s.label} />}
+              <div className="preview-photo" key={s.key}>
+                <div className="camera-frame preview-frame">
+                  {photos[s.key] && photoUrls[s.key] ? (
+                    <img src={photoUrls[s.key]} alt={s.label} />
+                  ) : (
+                    <span className="preview-empty">{s.label}</span>
+                  )}
                 </div>
-                <p style={{ fontSize: 11, textAlign: 'center', color: 'var(--ink-soft)' }}>{s.label}</p>
-                {photoMeta[s.key] && (
-                  <p className="capture-time" style={{ textAlign: 'center' }}>
-                    {new Date(photoMeta[s.key]).toLocaleTimeString()}
-                  </p>
-                )}
+                <div className="preview-photo-meta">
+                  <span className="preview-photo-label">{s.label}</span>
+                  <span className="capture-time">
+                    {photoMeta[s.key] ? fmt(photoMeta[s.key]) : 'No timestamp'}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

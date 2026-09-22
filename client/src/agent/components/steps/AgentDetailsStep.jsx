@@ -1,48 +1,66 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import { useAuth } from '../../../context/AuthContext';
+import { api } from '../../../api/client';
 import { useSubmission } from '../../context/SubmissionContext';
 import ActionBar from '../ActionBar';
 
-const NG_PHONE = /^(\+234|0)[789][01]\d{8}$/;
-
+// Agents are never asked for their name or phone again (req) — this step
+// confirms what the server has on file from registration, and feeds those
+// exact values into the submission preview so the record is consistent.
 export default function AgentDetailsStep() {
+  const { token } = useAuth();
   const { draft, updateDraft, goNext, goBack } = useSubmission();
+  const [profile, setProfile] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
-  const phoneError = useMemo(() => {
-    if (!draft.submittingAgentPhone) return null;
-    return NG_PHONE.test(draft.submittingAgentPhone) ? null : 'Enter a valid Nigerian phone number (e.g. 080XXXXXXXX)';
-  }, [draft.submittingAgentPhone]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getMe(token)
+      .then((me) => {
+        if (cancelled) return;
+        setProfile(me);
+        // Stamp the registration profile into the draft the moment it loads —
+        // the preview/summary shows these, and the server validates the same.
+        updateDraft({
+          submittingAgentName: me.fullName || draft.submittingAgentName,
+          submittingAgentPhone: me.phoneNumber || draft.submittingAgentPhone,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, updateDraft]);
 
-  const canContinue =
-    draft.submittingAgentName.trim().length > 1 &&
-    NG_PHONE.test(draft.submittingAgentPhone || '');
+  const row = (label, value) => (
+    <div className="ledger-row">
+      <span className="ledger-label">{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{value || '—'}</span>
+    </div>
+  );
 
   return (
     <>
       <div className="step-content">
         <h2>Agent details</h2>
-        <div className="field">
-          <label htmlFor="agentName">Polling unit agent's name</label>
-          <input
-            id="agentName"
-            type="text"
-            value={draft.submittingAgentName}
-            onChange={(e) => updateDraft({ submittingAgentName: e.target.value })}
-            placeholder="Full name"
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="agentPhone">Agent phone number</label>
-          <input
-            id="agentPhone"
-            type="tel"
-            value={draft.submittingAgentPhone}
-            onChange={(e) => updateDraft({ submittingAgentPhone: e.target.value })}
-            placeholder="080XXXXXXXX"
-          />
-          {phoneError && <p className="error-text">{phoneError}</p>}
+        <p className="step-hint">
+          Taken from your registration — no need to enter them again. Contact an administrator if anything is wrong.
+        </p>
+
+        {loadError && <p className="error-text">{loadError}</p>}
+
+        <div className="ledger">
+          {row('Full name', profile?.fullName)}
+          {row('Email', profile?.email)}
+          {row('Phone number', profile?.phoneNumber)}
         </div>
       </div>
-      <ActionBar onBack={goBack} onNext={goNext} nextDisabled={!canContinue} />
+      {/* Always enabled: the profile exists by this point (the account is
+          signed-in and approved), so there is nothing left to ask for. */}
+      <ActionBar onBack={goBack} onNext={goNext} />
     </>
   );
 }

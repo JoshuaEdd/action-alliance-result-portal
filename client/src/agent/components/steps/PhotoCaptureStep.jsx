@@ -3,7 +3,6 @@ import { useSubmission } from '../../context/SubmissionContext';
 import { useAuth } from '../../../context/AuthContext';
 import { logCapture } from '../../../api/offlineQueue';
 import { api } from '../../../api/client';
-import { formatLocationError } from '../../utils/geo';
 import CameraCapture from '../CameraCapture';
 import ActionBar from '../ActionBar';
 
@@ -18,20 +17,20 @@ const SLOTS = [
 // needed here; the manual front/back toggle in the viewfinder still exists as
 // a fallback if a device's rear camera is unavailable.
 
-// Location is a gate on this step, not an afterthought: the browser
-// permission is requested from the button tap and live capture stays locked
-// until a fix is granted (SEC-7 / FR-2.7). The same fix is stamped onto every
-// photo as a watermark for the admin record.
-//
-// Two hard lessons from the field shaped this logic:
-//  - The request fires ONLY from a tap if permission was not pre-granted.
-//    Starting on tap makes the pop-up appear deterministically.
-//  - We never refuse to unlock on accuracy. Some phones answer the pop-up
-//    with "Approximate", giving a coarse fix; a hard no-go waiting for a
-//    tighter reading is what kept bricking photo capture. Any real fix now
-//    unlocks capture — an approximate one is just flagged with a warning chip
-//    so the agent (and the admin record) can see the accuracy honestly.
-// A fix already in state is reused so a returning agent unlocks instantly.
+// Location is a hard gate — there is no "continue without location" (req).
+// The fix is auto-retried until obtained: the loop lives in SubmissionContext
+// and this step just reflects its state via gpsStatus.
+//  - 'locating'  → the browser permission/capture request is in flight
+//  - 'retrying'  → no fix yet, retrying automatically every 5s
+//  - 'error'     → permission hard-blocked; still retrying, just slower
+//  - 'active'    → a fix is held; capture and the rest of the flow unlock
+const STATUS_TEXT = {
+  locating: 'Getting location…',
+  retrying: 'Location not available — retrying automatically…',
+  error: 'Location is blocked. Enable it for this site — still retrying in the background…',
+  active: 'Location active',
+};
+
 const COARSE_METERS = 200;
 export default function PhotoCaptureStep() {
   const { token } = useAuth();
@@ -41,16 +40,16 @@ export default function PhotoCaptureStep() {
     photoMeta,
     setPhotoMeta,
     gps,
-    setGps,
+    gpsError,
+    gpsStatus,
     requestGps,
-    gpsLoading,
+    startAutoRetryGeolocation,
+    stopAutoRetryGeolocation,
     goNext,
     goBack,
   } = useSubmission();
   const [previews, setPreviews] = useState({});
   const [locating, setLocating] = useState(false);
-  const [locationReady, setLocationReady] = useState(() => Boolean(gps));
-  const [locationError, setLocationError] = useState(null);
   // The agent's assigned polling unit, burned onto every photo stamp so the
   // submitted sheet is self-identifying even before it's matched in the DB.
   const [site, setSite] = useState('');
@@ -64,37 +63,23 @@ export default function PhotoCaptureStep() {
       .catch(() => {});
   }, [token]);
 
-  // Sync locationReady if GPS is acquired (e.g. from background prefetch or context update)
+  // Auto-retry the fix for as long as this step is on screen (and never let
+  // the agent capture or continue without one). Bail cleanly on unmount.
   useEffect(() => {
-    if (gps) {
-      setLocationReady(true);
-      setLocationError(null);
-    }
-  }, [gps]);
+    if (!gps) startAutoRetryGeolocation();
+    return () => stopAutoRetryGeolocation();
+  }, [gps, startAutoRetryGeolocation, stopAutoRetryGeolocation]);
 
   const requestPreciseLocation = useCallback(async () => {
     setLocating(true);
-    setLocationError(null);
     try {
       await requestGps();
-      setLocationReady(true);
-    } catch (err) {
-      setLocationReady(false);
-      setLocationError(formatLocationError(err));
+    } catch {
+      // the auto-retry loop takes over; nothing to do here
     } finally {
       setLocating(false);
     }
   }, [requestGps]);
-
-  // Field escape hatch: if this device simply cannot produce a fix (no GPS,
-  // permission hard-blocked, insecure origin), the agent can still work. The
-  // photos then carry timestamp-only stamps (no coordinates), so the admin
-  // sees at a glance which captures are not geotagged.
-  const skipLocation = useCallback(() => {
-    setLocating(false);
-    setLocationError(null);
-    setLocationReady(true);
-  }, []);
 
   const handleCapture = (key) => (blob, previewUrl, capturedAt) => {
     setPhotos((p) => ({ ...p, [key]: blob }));
@@ -112,7 +97,7 @@ export default function PhotoCaptureStep() {
   };
 
   const allCaptured = SLOTS.every((s) => photos[s.key]);
-  const canContinue = allCaptured && locationReady;
+  const canContinue = allCaptured && Boolean(gps);
 
   return (
     <>
@@ -122,70 +107,54 @@ export default function PhotoCaptureStep() {
           Live camera only — gallery uploads aren't accepted for any of these.
         </p>
 
-        {!locationReady ? (
+        {!gps ? (
           <div className="card notice-card">
             <div className="notice-head">
               <span className="notice-dot">📍</span>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Location required</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
-                  Tap the button to start. When your phone asks about location access, choose{' '}
-                  <strong>Allow</strong> and <strong>Precise</strong> — photo capture unlocks as soon as
-                  a fix is available. The location is used to verify the capture point against your
-                  polling unit.
+                  Photo capture is locked until your device supplies a location. When your phone asks
+                  about location access, choose <strong>Allow</strong> and <strong>Precise</strong>.
+                  This app keeps trying on its own until a fix is available — uploads are not possible
+                  without it.
                 </div>
               </div>
             </div>
-            {locating && <p style={{ fontSize: 13, color: 'var(--ink-soft)', padding: '0 16px 8px' }}>Requesting location…</p>}
-            {locationError && <p className="error-text" style={{ padding: '0 16px 8px' }}>{locationError}</p>}
+            <p
+              className="geo-status"
+              role="status"
+              style={{ fontSize: 13, padding: '10px 16px 0', color: gpsStatus === 'error' ? 'var(--error-red)' : 'var(--ink-soft)' }}
+            >
+              {STATUS_TEXT[gpsStatus] || STATUS_TEXT.locating}
+            </p>
+            {gpsError && gpsStatus === 'error' && <p className="error-text" style={{ padding: '0 16px 8px' }}>{gpsError}</p>}
             <div style={{ padding: '0 16px 16px' }}>
               <button type="button" className={locating ? 'btn btn-secondary' : 'btn btn-primary'} onClick={requestPreciseLocation}>
-                {locating ? 'Requesting… (tap to retry)' : 'Grant precise location'}
+                {locating ? 'Requesting…' : 'Request location now'}
               </button>
-            </div>
-            <div style={{ padding: '0 16px 16px' }}>
-              <button type="button" className="btn btn-secondary" onClick={skipLocation}>
-                Continue without location
-              </button>
-              <p style={{ fontSize: 11, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
-                Photos without a fix carry timestamp-only stamps — no GPS coordinates — so they stand
-                out in verification.
-              </p>
             </div>
           </div>
         ) : (
           <>
             <div className="gps-chip-row">
-              {gps ? (
-                <>
-                  {gps.accuracy > COARSE_METERS ? (
-                    <span className="chip chip-warn">Approximate fix ±{Math.round(gps.accuracy)}m</span>
-                  ) : (
-                    <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
-                  )}
-                  <span className="chip">{gps.street ? gps.street : gps.placeName ? gps.placeName : gps.approximatePlace ? gps.approximatePlace : `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}</span>
-                </>
+              {gps.accuracy > COARSE_METERS ? (
+                <span className="chip chip-warn">Approximate fix ±{Math.round(gps.accuracy)}m</span>
               ) : (
-                <span className="chip chip-warn">UNVERIFIED LOCATION</span>
+                <span className="chip chip-ok">GPS locked ±{Math.round(gps.accuracy)}m</span>
               )}
+              <span className="chip">{gps.street ? gps.street : gps.placeName ? gps.placeName : gps.approximatePlace ? gps.approximatePlace : `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}</span>
             </div>
-            {gps ? (
-              gps.accuracy > COARSE_METERS && (
-                <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
-                  This looks like an approximate fix (±{Math.round(gps.accuracy)}m). For a tighter record,
-                  choose Precise in the location permission pop-up or your phone's location settings.
-                </p>
-              )
-            ) : (
+            {gps.accuracy > COARSE_METERS && (
               <p className="step-hint" style={{ marginTop: -8, marginBottom: 16 }}>
-                No GPS fix — captures will be stamped with the timestamp only. If your phone can share
-                location, go back a step and grant precise access for a geotagged record.
+                This looks like an approximate fix (±{Math.round(gps.accuracy)}m). For a tighter record,
+                choose Precise in the location permission pop-up or your phone's location settings.
               </p>
             )}
           </>
         )}
 
-        {locationReady &&
+        {gps &&
           SLOTS.map((s) => (
             <div key={s.key}>
               <CameraCapture
