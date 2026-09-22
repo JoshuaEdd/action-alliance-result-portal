@@ -674,13 +674,26 @@ button {
 }
 .btn-shutter {
   flex: 1;
-  min-height: var(--tap-target);
+  min-height: 48px;
   border: none;
   border-radius: 999px;
-  background: radial-gradient(circle at 50% 50%, #fff 0 26%, var(--grad-brand) 30%);
-  box-shadow: 0 6px 18px rgba(255, 122, 0, 0.4), inset 0 0 0 3px rgba(255, 255, 255, 0.65);
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(255, 122, 0, 0.4), inset 0 0 0 2px rgba(255, 122, 0, 0.6);
   cursor: pointer;
   transition: transform 0.12s ease, box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--aa-deep);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.btn-shutter-icon {
+  font-size: 17px;
+  line-height: 1;
 }
 .btn-shutter:active:not(:disabled) { transform: scale(0.92); }
 .btn-shutter:disabled {

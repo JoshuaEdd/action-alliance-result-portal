@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { api } from '../../api/client';
 import { enqueueSubmission, flushQueue } from '../../api/offlineQueue';
 import { useAuth } from '../../context/AuthContext';
-import { getLocation, reverseGeocode, formatLocationError } from '../utils/geo';
+import { getLocation, formatLocationError } from '../utils/geo';
 import { sanitizeVotesMap } from '../utils/results';
 
 const SubmissionContext = createContext(null);
@@ -108,21 +108,27 @@ export function SubmissionProvider({ children }) {
       setGps(fix);
       setGpsStatus('active');
       setGpsLoading(false);
-      reverseGeocode(lat, lng).then((geoData) => {
-        if (geoData) {
-          setGps((g) =>
-            g
-              ? {
-                  ...g,
-                  street: geoData.street,
-                  placeName: geoData.displayName,
-                  approximatePlace: geoData.approximateName,
-                  shortName: geoData.shortName,
-                }
-              : g
-          );
-        }
-      });
+      // Human-readable place name, resolved through the server (Nominatim is
+      // unreliable straight from the browser): the chip and photo watermark
+      // keep showing it once it lands, and never fall back to raw coordinates.
+      api
+        .reverseGeocodePlace(token, lat, lng)
+        .then(({ place }) => {
+          if (place) {
+            setGps((g) =>
+              g
+                ? {
+                    ...g,
+                    street: place,
+                    placeName: place,
+                    approximatePlace: place,
+                    shortName: place,
+                  }
+                : g
+            );
+          }
+        })
+        .catch(() => {});
       return fix;
     } catch (err) {
       setGpsLoading(false);
@@ -130,7 +136,7 @@ export function SubmissionProvider({ children }) {
       setGpsError(msg);
       throw err;
     }
-  }, []);
+  }, [token]);
 
   // Auto-retry geolocation until a fix is obtained (req: keep retrying,
   // never let the agent upload without a location). One guarded loop, wakes

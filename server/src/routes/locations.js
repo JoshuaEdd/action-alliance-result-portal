@@ -1,6 +1,7 @@
 import express from 'express';
 import { pool } from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { reverseGeocodePlace } from '../utils/placeName.js';
 
 const router = express.Router();
 
@@ -53,6 +54,20 @@ router.get('/parties', requireAuth, async (_req, res) => {
      ORDER BY is_priority DESC, display_order ASC`
   );
   res.json(rows);
+});
+
+// SEC-4/UX — turn a GPS fix into the human-readable place name shown on the
+// agent's location chip and burned onto photos. Run through the server, not
+// the browser, so Nominatim's CORS/rate limits and an untrusted client can't
+// break it; reverseGeocodePlace caches by rounded coords to stay cheap.
+router.get('/reverse', requireAuth, async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'lat and lng are required numeric query parameters' });
+  }
+  const place = await reverseGeocodePlace(lat, lng);
+  res.json({ place, lat, lng });
 });
 
 export default router;

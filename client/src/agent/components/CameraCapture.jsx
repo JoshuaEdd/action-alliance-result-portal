@@ -248,7 +248,10 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
               onClick={takePhoto}
               disabled={!videoReady}
               aria-label="Capture photo"
-            />
+            >
+              <span className="btn-shutter-icon" aria-hidden="true">📷</span>
+              <span className="btn-shutter-label">Tap to Capture</span>
+            </button>
           </>
         ) : (
           <button type="button" className="btn btn-primary" onClick={() => startCamera()} disabled={!!supportError}>
