@@ -71,6 +71,8 @@ export const api = {
 
   // --- agent ---
   getMyPollingUnit: (token) => request('/locations/my-polling-unit', { token }),
+  reverseGeocodePlace: (token, lat, lng) =>
+    request(`/locations/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`, { token }),
   getParties: (token) => request('/locations/parties', { token }),
   submitResult: (token, formData) =>
     request('/submissions', { method: 'POST', token, body: formData, isForm: true }),
