@@ -661,6 +661,38 @@ button {
   background: rgba(10, 20, 40, 0.55);
   backdrop-filter: blur(2px);
 }
+/* Camera-standby state: an empty dark frame reads as "broken". Show the slot
+   prompt instead so it's obvious the live camera opens on "Click to Capture". */
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(0, 184, 230, 0.14), transparent 55%),
+    #0A1428;
+}
+.camera-placeholder-icon {
+  font-size: 34px;
+  opacity: 0.9;
+}
+.camera-placeholder-text {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.camera-placeholder-hint {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 240px;
+}
 .capture-flash {
   position: absolute;
   inset: 0;
