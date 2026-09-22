@@ -280,6 +280,40 @@ CREATE TABLE IF NOT EXISTS correction_requests (
   applied_result_id UUID REFERENCES submissions(id)
 );
 
+-- Idempotent upgrade for databases where correction_requests pre-dates the
+-- full-result model (the single-column placeholder field_name/original_value/
+-- proposed_value). The CREATE above is a no-op when the table already exists,
+-- so the placeholder columns are swapped for the snapshot columns here. A
+-- NOT NULL column cannot be added to a non-empty table without a default, so
+-- defaults are applied first and dropped once the column exists.
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS original_registered  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS original_accredited  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS original_invalid     INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS original_party_votes JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS proposed_registered  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS proposed_accredited  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS proposed_invalid     INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS proposed_party_votes JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE correction_requests ALTER COLUMN original_registered  DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN original_accredited  DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN original_invalid     DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN original_party_votes DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN proposed_registered  DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN proposed_accredited  DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN proposed_invalid     DROP DEFAULT;
+ALTER TABLE correction_requests ALTER COLUMN proposed_party_votes DROP DEFAULT;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS request_lat       DOUBLE PRECISION;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS request_lng       DOUBLE PRECISION;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS request_place     TEXT;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS decided_by        UUID REFERENCES users(id);
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS decided_at        TIMESTAMPTZ;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS rejection_reason  TEXT;
+ALTER TABLE correction_requests ADD COLUMN IF NOT EXISTS applied_result_id UUID REFERENCES submissions(id);
+-- The single-field placeholder columns no longer exist in the model.
+ALTER TABLE correction_requests DROP COLUMN IF EXISTS field_name;
+ALTER TABLE correction_requests DROP COLUMN IF EXISTS original_value;
+ALTER TABLE correction_requests DROP COLUMN IF EXISTS proposed_value;
+
 -- SEC-4: correction requests are never edited/overwritten after creation —
 -- the workflow only changes `status` (pending → approved|rejected). At most
 -- one ACTIVE (pending) request may exist per submitted result; a new request
