@@ -1,21 +1,42 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../api/client';
 import { enqueueSubmission, flushQueue } from '../../api/offlineQueue';
 import { useAuth } from '../../context/AuthContext';
 import { getLocation, reverseGeocode, formatLocationError } from '../utils/geo';
+import { sanitizeVotesMap } from '../utils/results';
 
 const SubmissionContext = createContext(null);
 const DRAFT_KEY = 'result-draft-v1';
 
 export const STEPS = ['location', 'votes', 'agent', 'photos', 'preview'];
 
+// Every election-result figure defaults to 0 (req: result fields default to
+// zero). Name/phone are filled from the agent's registration profile by the
+// AgentDetailsStep — the agent is never asked for them again.
 const emptyDraft = {
-  totalRegisteredVoters: '',
-  totalAccreditedVoters: '',
-  totalInvalidVotes: '',
+  totalRegisteredVoters: '0',
+  totalAccreditedVoters: '0',
+  totalInvalidVotes: '0',
   submittingAgentName: '',
   submittingAgentPhone: '',
 };
+
+const NUMERIC_DRAFT_KEYS = ['totalRegisteredVoters', 'totalAccreditedVoters', 'totalInvalidVotes'];
+
+// A saved draft may predate the zero-defaults: any empty/blank or non-numeric
+// numeric field is restored as '0' instead of carrying a stray ''.
+function normalizeDraft(saved) {
+  const base = { ...emptyDraft, ...saved };
+  NUMERIC_DRAFT_KEYS.forEach((k) => {
+    const raw = String(base[k] ?? '').trim();
+    base[k] = /^[0-9]+$/.test(raw) ? raw.replace(/^0+(?=\d)/, '') : '0';
+  });
+  return base;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function SubmissionProvider({ children }) {
   const { token, user } = useAuth();
@@ -23,12 +44,12 @@ export function SubmissionProvider({ children }) {
   const [draft, setDraft] = useState(() => {
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
-      return saved ? { ...emptyDraft, ...JSON.parse(saved) } : emptyDraft;
+      return saved ? normalizeDraft(JSON.parse(saved)) : emptyDraft;
     } catch {
       return emptyDraft;
     }
   });
-  // Per-party vote counts: { [partyId]: '123' }. Kept separate from draft's
+  // Per-party vote counts: { [partyId]: '0' }. Kept separate from draft's
   // flat fields since it's keyed dynamically by party, still persisted the
   // same way (FR-2.11 local draft autosave).
   const [partyVotes, setPartyVotes] = useState(() => {
@@ -50,9 +71,22 @@ export function SubmissionProvider({ children }) {
   const [gps, setGps] = useState(null); // { lat, lng, capturedAt, accuracy, placeName }
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState(null);
+  // Geo acquisition status so the capture step can tell the agent exactly
+  // what the phone is doing: idle → locating → retrying → error, then active
+  // once a fix lands (uploads are blocked until then).
+  const [gpsStatus, setGpsStatus] = useState('idle');
   const [submitResult, setSubmitResult] = useState(null); // { referenceNumber, status } | { queued: true }
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+
+  // Mirrors `gps` so the async retry loop can reason about it without stale
+  // closures, and guards against two loops ever running concurrently.
+  const gpsRef = useRef(gps);
+  const retryLoopRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  useEffect(() => {
+    gpsRef.current = gps;
+  }, [gps]);
 
   const requestGps = useCallback(async () => {
     setGpsLoading(true);
@@ -72,6 +106,7 @@ export function SubmissionProvider({ children }) {
         shortName: null,
       };
       setGps(fix);
+      setGpsStatus('active');
       setGpsLoading(false);
       reverseGeocode(lat, lng).then((geoData) => {
         if (geoData) {
@@ -95,6 +130,39 @@ export function SubmissionProvider({ children }) {
       setGpsError(msg);
       throw err;
     }
+  }, []);
+
+  // Auto-retry geolocation until a fix is obtained (req: keep retrying,
+  // never let the agent upload without a location). One guarded loop, wakes
+  // every 5s (10s when permission is hard-blocked, to avoid a busy spin on
+  // browsers that return a denial instantly) and only exits on a fix or an
+  // explicit stop. The step UI surfaces the current gpsStatus text.
+  const startAutoRetryGeolocation = useCallback(async () => {
+    if (retryLoopRef.current) return;
+    retryLoopRef.current = true;
+    stopRequestedRef.current = false;
+    try {
+      while (!gpsRef.current && !stopRequestedRef.current) {
+        setGpsStatus('locating');
+        try {
+          await requestGps();
+          if (gpsRef.current) break;
+        } catch (err) {
+          const denied = err?.code === 1;
+          setGpsStatus(denied ? 'error' : 'retrying');
+          // Permission hard-blocked: slow the retry to 10s so a browser that
+          // answers denial instantly doesn't busy-spin; everything else retries
+          // every 5s until a fix lands.
+          await sleep(denied ? 10000 : 5000);
+        }
+      }
+    } finally {
+      retryLoopRef.current = false;
+    }
+  }, [requestGps]);
+
+  const stopAutoRetryGeolocation = useCallback(() => {
+    stopRequestedRef.current = true;
   }, []);
 
   // Proactively check if geolocation permission is already granted.
@@ -124,6 +192,15 @@ export function SubmissionProvider({ children }) {
   }, [partyVotes]);
 
   const updatePartyVotes = useCallback((patch) => setPartyVotes((p) => ({ ...p, ...patch })), []);
+  const seedPartyVotes = useCallback(
+    (partyIds) => {
+      setPartyVotes((p) => {
+        const missing = partyIds.filter((id) => p[id] === undefined || p[id] === '');
+        return missing.length ? { ...p, ...Object.fromEntries(missing.map((id) => [id, '0'])) } : p;
+      });
+    },
+    []
+  );
 
   const updateDraft = useCallback((patch) => setDraft((d) => ({ ...d, ...patch })), []);
 
@@ -137,6 +214,7 @@ export function SubmissionProvider({ children }) {
     setPhotoMeta({});
     setGps(null);
     setGpsError(null);
+    setGpsStatus('idle');
     setStepIndex(0);
     localStorage.removeItem(DRAFT_KEY);
     localStorage.removeItem(`${DRAFT_KEY}:parties`);
@@ -145,17 +223,34 @@ export function SubmissionProvider({ children }) {
   const submit = useCallback(async () => {
     setSubmitting(true);
     setSubmitError(null);
-    const partyVotesPayload = Object.entries(partyVotes)
-      .filter(([, votes]) => votes !== '' && votes !== undefined)
-      .map(([partyId, votes]) => ({ partyId, votes: Number(votes) }));
+
+    // Uploads are blocked entirely without a geolocation fix (req) — this is
+    // the last line of defence on the client; the server rejects too.
+    if (!gps) {
+      setSubmitting(false);
+      setSubmitError('Location is required before the result can be sent. Please allow location access.');
+      return;
+    }
+
+    // Digits-only guarantee before the payload leaves the browser.
+    const { clean, dropped } = sanitizeVotesMap(partyVotes);
+    if (dropped > 0) {
+      setSubmitting(false);
+      setSubmitError('Some party vote entries contained non-numeric characters. Correct them and try again.');
+      return;
+    }
+    const partyVotesPayload = Object.entries(clean).map(([partyId, votes]) => ({
+      partyId,
+      votes: Number(votes),
+    }));
 
     const fields = {
       ...draft,
       pollingUnitId: user.assignedPollingUnitId,
       partyVotes: JSON.stringify(partyVotesPayload),
-      captureLat: gps?.lat,
-      captureLng: gps?.lng,
-      capturedAt: gps?.capturedAt,
+      captureLat: gps.lat,
+      captureLng: gps.lng,
+      capturedAt: gps.capturedAt,
       // Per-photo shutter times — the server stores one per photo row.
       photoTimestamps: JSON.stringify(photoMeta),
     };
@@ -210,6 +305,7 @@ export function SubmissionProvider({ children }) {
         updateDraft,
         partyVotes,
         updatePartyVotes,
+        seedPartyVotes,
         photos,
         setPhotos,
         photoMeta,
@@ -218,7 +314,10 @@ export function SubmissionProvider({ children }) {
         setGps,
         gpsLoading,
         gpsError,
+        gpsStatus,
         requestGps,
+        startAutoRetryGeolocation,
+        stopAutoRetryGeolocation,
         submit,
         submitting,
         submitError,

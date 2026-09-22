@@ -146,6 +146,7 @@ export default function PollingUnitPage() {
           <div style={{ marginBottom: 24, fontSize: 14, color: 'var(--ink-soft)' }}>
             <div>Submitted by: {pu.submitting_agent_name} ({pu.submitting_agent_phone})</div>
             <div>Captured: {new Date(pu.captured_at).toLocaleString()}</div>
+            {pu.capture_place && <div>Capture place: {pu.capture_place}</div>}
             <div>
               Status: <span className={`status-pill ${pu.status}`}>{pu.status.replace('_', ' ')}</span>
               {pu.gps_flagged && <span className="status-pill flagged" style={{ marginLeft: 6 }}>GPS outside expected radius</span>}
@@ -153,10 +154,20 @@ export default function PollingUnitPage() {
           </div>
 
           <h3 style={{ fontSize: 14 }}>Photos</h3>
-          <div className="detail-photo-grid" style={{ marginBottom: 32 }}>
+          <div className="detail-photo-grid is-administrative" style={{ marginBottom: 32 }}>
             {['agent_tag', 'result_sheet', 'agent_passport'].map((type) => {
               const photo = pu.photos.find((p) => p.photo_type === type);
-              return <PhotoTile key={type} label={PHOTO_LABELS[type]} token={token} photo={photo} onOpen={setLightbox} />;
+              return (
+                <div key={type} className="ph-wrap">
+                  <PhotoTile label={PHOTO_LABELS[type]} token={token} photo={photo} onOpen={setLightbox} />
+                  <div className="ph-caption">
+                    <span className="ph-caption-label">{PHOTO_LABELS[type]}</span>
+                    {photo?.captured_at && (
+                      <span className="ph-caption-time">{new Date(photo.captured_at).toLocaleString()}</span>
+                    )}
+                  </div>
+                </div>
+              );
             })}
           </div>
 

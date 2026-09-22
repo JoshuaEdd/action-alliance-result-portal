@@ -153,6 +153,24 @@ button {
 }
 .chip-ok { background: rgba(0, 230, 118, 0.22); }
 .chip-warn { background: rgba(255, 159, 0, 0.3); }
+.agent-nav {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--step-12);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  padding-top: var(--step-12);
+}
+.agent-nav a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.15s ease;
+}
+.agent-nav a:hover { background: rgba(255, 255, 255, 0.24); }
 .gps-chip-row {
   display: flex;
   gap: 8px;
@@ -733,4 +751,98 @@ button {
 }
 @keyframes draw-stroke {
   to { stroke-dashoffset: 0; }
+}
+
+/* ── Vote entry layout: responsive columns (req) ──
+   The agent's phone stays a single column; on a desktop/tablet the result
+   entry spreads into two columns so the ~20 party cards are readable at a
+   glance without scrolling forever. The mobile single-column layout is
+   untouched below the breakpoint. */
+.tally-card-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.party-feed {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+/* ── Compact photo previews (req: reduce preview size) ── */
+.preview-photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.preview-photo {
+  min-width: 0;
+}
+.preview-frame {
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.preview-empty {
+  font-size: 10px;
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 4px;
+}
+.preview-photo-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.preview-photo-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.capture-time.inline { margin-top: 0; }
+
+/* ── Geo acquisition status (req: auto-retry until obtained) ── */
+.geo-status {
+  margin: 0;
+}
+.geo-blocked-note { color: var(--error-red); }
+
+/* Desktop ≥ 780px: widen the agent shell (still centered on the status bar),
+   split the tally cards and the party feed into two balanced columns. */
+@media (min-width: 780px) {
+  .app-shell {
+    max-width: 920px;
+  }
+  .step-content {
+    padding-left: var(--step-24);
+    padding-right: var(--step-24);
+  }
+  .action-bar {
+    max-width: 880px;
+  }
+  .tally-card-group {
+    grid-template-columns: 1fr 1fr;
+  }
+  .party-feed {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Large desktops: the party feed can take three columns without the cards
+   feeling cramped. */
+@media (min-width: 1200px) {
+  .party-feed {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
 }

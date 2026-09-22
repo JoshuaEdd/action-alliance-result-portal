@@ -43,12 +43,29 @@ export default function ConfirmationPage() {
         </>
       )}
 
-      <button
+      {!queued && (
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: 12, width: '100%' }}
+          onClick={() => navigate(`/correction/${submitResult.referenceNumber}`)}
+        >
+          Made a mistake? Request a correction
+        </button>
+      )}
+
+<button
         className="btn btn-primary"
         style={{ marginTop: 40, width: '100%' }}
         onClick={() => navigate('/submit')}
       >
         Done
+      </button>
+      <button
+        className="btn btn-secondary"
+        style={{ marginTop: 10, width: '100%' }}
+        onClick={() => navigate('/my-results')}
+      >
+        View my results
       </button>
     </div>
   );

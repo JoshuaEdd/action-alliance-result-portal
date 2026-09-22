@@ -70,6 +70,17 @@ CREATE TABLE IF NOT EXISTS users (
   failed_login_attempts SMALLINT NOT NULL DEFAULT 0,
   locked_until          TIMESTAMPTZ,
   is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Agent registration lifecycle. New accounts are 'accepted' once their
+  -- identity is verified (no admin review queue — see /registrations notes);
+  -- 'rejected' is kept for historically denied applications so they cannot
+  -- be silently revived.
+  registration_status   TEXT NOT NULL DEFAULT 'accepted',
+  -- Set when the agent's email/SMS verification code is validated, the gate
+  -- before fingerprint enrollment is ever offered.
+  registration_verified_at TIMESTAMPTZ,
+  -- Who/When an administrator reviewed this registration ('accepted'/'rejected')
+  registration_decided_by UUID REFERENCES users(id),
+  registration_decided_at TIMESTAMPTZ,
   deleted_at            TIMESTAMPTZ, -- soft-delete: remove from lists, never log in
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT email_or_phone CHECK (email IS NOT NULL OR phone_number IS NOT NULL)
@@ -78,6 +89,13 @@ CREATE TABLE IF NOT EXISTS users (
 -- `deleted_at` was added after the initial release; keep the migration safe
 -- for databases that already had a `users` table without it.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- Registration review / verification columns for databases that predate the
+-- admin-review workflow (guarded so `npm run migrate` stays idempotent).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_status TEXT NOT NULL DEFAULT 'accepted';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_verified_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_decided_by UUID REFERENCES users(id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_decided_at TIMESTAMPTZ;
 
 -- Agents authenticate with fingerprint biometrics (WebAuthn), not passwords —
 -- password_hash stays NOT NULL only for legacy rows; new agent rows are NULL.
@@ -149,6 +167,10 @@ CREATE TABLE IF NOT EXISTS submissions (
   capture_lat           DOUBLE PRECISION NOT NULL,
   capture_lng           DOUBLE PRECISION NOT NULL,
   captured_at           TIMESTAMPTZ NOT NULL,
+  -- Human-readable place at the capture point (reverse-geocoded server-side
+  -- at submission time) so admins can read street / landmark / town without
+  -- opening a map. NULL only if the geocoder is unreachable.
+  capture_place         TEXT,
   gps_flagged           BOOLEAN NOT NULL DEFAULT FALSE, -- SEC-7
 
   status                submission_status NOT NULL DEFAULT 'submitted',
@@ -211,26 +233,93 @@ DO $$ BEGIN
   CREATE TYPE correction_status AS ENUM ('pending', 'approved', 'rejected');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- A correction request is a FULL proposed replacement result for an already
+-- submitted polling unit result. It never overwrites the submission row:
+--   * The original values are snapshotted here (original_* columns).
+--   * The proposed values are stored separately (proposed_* columns).
+--   * On approval the request links to the superseding submissions row it
+--     created (applied_result_id); the original submissions row gets its
+--     `superseded_by` pointer set so the official result is discoverable
+--     while the immutable original stays intact for auditing.
+-- The single-field placeholder (field_name/original_value/proposed_value) is
+-- dropped — corrections span the whole result, not one column.
 CREATE TABLE IF NOT EXISTS correction_requests (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   submission_id     UUID NOT NULL REFERENCES submissions(id),
-  field_name        TEXT NOT NULL,
-  original_value    TEXT NOT NULL,
-  proposed_value    TEXT NOT NULL,
+
+  -- Original submitted result (immutable snapshot taken at request time)
+  original_registered  INTEGER NOT NULL,
+  original_accredited  INTEGER NOT NULL,
+  original_invalid     INTEGER NOT NULL,
+  original_party_votes JSONB NOT NULL, -- { [party_id]: votes }
+
+  -- Proposed corrected result (what the agent believes the sheet says)
+  proposed_registered  INTEGER NOT NULL,
+  proposed_accredited  INTEGER NOT NULL,
+  proposed_invalid     INTEGER NOT NULL,
+  proposed_party_votes JSONB NOT NULL, -- { [party_id]: votes }
+
   reason            TEXT NOT NULL,
   requested_by      UUID NOT NULL REFERENCES users(id),
   status            correction_status NOT NULL DEFAULT 'pending',
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- Correction-request metadata, stored separately from the original
+  -- submission's capture metadata (which stays on the submission row).
+  request_lat       DOUBLE PRECISION,
+  request_lng       DOUBLE PRECISION,
+  request_place     TEXT,
+
+  -- Decision (authorized admin only). rejection_reason is required on reject.
+  decided_by        UUID REFERENCES users(id),
+  decided_at        TIMESTAMPTZ,
+  rejection_reason  TEXT,
+
+  -- Set on approval: the superseding submissions row that now holds the
+  -- current official result (original is archived via submissions.superseded_by).
+  applied_result_id UUID REFERENCES submissions(id)
 );
 
--- All admins must approve (SEC-4) — one row per required approver
-CREATE TABLE IF NOT EXISTS correction_approvals (
-  correction_request_id  UUID NOT NULL REFERENCES correction_requests(id),
-  admin_id                UUID NOT NULL REFERENCES users(id),
-  approved                BOOLEAN NOT NULL,
-  decided_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (correction_request_id, admin_id)
+-- SEC-4: correction requests are never edited/overwritten after creation —
+-- the workflow only changes `status` (pending → approved|rejected). At most
+-- one ACTIVE (pending) request may exist per submitted result; a new request
+-- can be raised only after the previous one was decided.
+DROP INDEX IF EXISTS one_pending_correction_per_submission;
+CREATE UNIQUE INDEX IF NOT EXISTS one_pending_correction_per_submission
+  ON correction_requests (submission_id)
+  WHERE status = 'pending';
+
+-- A submitted result may carry new evidence with its correction request.
+-- Bytes live in the DB (like submission_photos) so they survive Render's
+-- ephemeral disk. Original evidence stays on submission_photos untouched.
+CREATE TABLE IF NOT EXISTS correction_photos (
+  id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  correction_request_id  UUID NOT NULL REFERENCES correction_requests(id) ON DELETE CASCADE,
+  data                   BYTEA,
+  storage_path           TEXT,
+  mime_type              TEXT NOT NULL,
+  size_bytes             INTEGER NOT NULL,
+  captured_at            TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Superseding-record model (SEC-3 immutability + SEC-4 apply-on-approval):
+--   * submissions.superseded_by: set on the ORIGINAL row when an approved
+--     correction replaces it — the original values are never overwritten.
+--   * submissions.corrected_by: set on the SUPERSEDING row that carries the
+--     approved corrected result, tracing which decision produced it.
+-- Both are workflow metadata, never result data.
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS superseded_by UUID REFERENCES submissions(id);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS corrected_by UUID REFERENCES correction_requests(id);
+
+-- The unique index backing SEC-5 must ignore superseded rows so the approved
+-- correction's successor row can become the single accepted result for the
+-- PU. Recreated (drop + create) so databases that already have the old
+-- predicate pick up the new one on `npm run migrate`.
+DROP INDEX IF EXISTS one_accepted_submission_per_pu;
+CREATE UNIQUE INDEX IF NOT EXISTS one_accepted_submission_per_pu
+  ON submissions (polling_unit_id)
+  WHERE duplicate_of IS NULL AND superseded_by IS NULL AND status != 'flagged';
 
 -- ─────────────────────────────────────────────
 -- Invite codes: one-time, per-polling-unit codes that let an agent
@@ -265,6 +354,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   metadata        JSONB,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ─────────────────────────────────────────────
+-- Admin-controlled global settings (single-row key/value store).
+-- 'agent_portal_active' (boolean) is the single administrative control that
+-- deactivates every agent portal; enforcement is server-side, so a direct
+-- API request cannot bypass it.
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS app_settings (
+  key         TEXT PRIMARY KEY,
+  value       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Default: portal is ACTIVE for fresh databases (and idempotently preserved
+-- for existing ones — ON CONFLICT never overwrites an admin's prior state).
+INSERT INTO app_settings (key, value) VALUES ('agent_portal_active', '{"active": true}'::jsonb)
+  ON CONFLICT (key) DO NOTHING;
 
 -- Revoke UPDATE/DELETE at the app's DB role level for append-only tables
 -- (run separately once the app's connection role is created):

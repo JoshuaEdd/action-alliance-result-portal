@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { listPending } from '../../api/offlineQueue';
 import { useAuth } from '../../context/AuthContext';
 
@@ -48,6 +49,10 @@ export default function AgentHeader({ gps, locating = false }) {
         </span>
         {pending > 0 && <span className="chip chip-warn">⇪ {pending} pending</span>}
       </div>
+      <nav className="agent-nav">
+        <Link to="/submit">Submit result</Link>
+        <Link to="/my-results">My results</Link>
+      </nav>
     </header>
   );
 }

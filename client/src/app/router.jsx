@@ -8,12 +8,15 @@ import OtpPage from '../pages/OtpPage';
 import RegisterPage from '../agent/pages/RegisterPage';
 import WizardPage from '../agent/pages/WizardPage';
 import ConfirmationPage from '../agent/pages/ConfirmationPage';
+import CorrectionRequestPage from '../agent/pages/CorrectionRequestPage';
+import MyResultsPage from '../agent/pages/MyResultsPage';
 
 import DashboardPage from '../admin/pages/DashboardPage';
 import LgaPage from '../admin/pages/LgaPage';
 import WardPage from '../admin/pages/WardPage';
 import PollingUnitPage from '../admin/pages/PollingUnitPage';
 import CorrectionsPage from '../admin/pages/CorrectionsPage';
+import CorrectionDetailPage from '../admin/pages/CorrectionDetailPage';
 import AdminsPage from '../admin/pages/AdminsPage';
 
 import { SubmissionProvider } from '../agent/context/SubmissionContext';
@@ -65,6 +68,8 @@ function Routed() {
       >
         <Route path="/submit" element={<WizardPage />} />
         <Route path="/confirmation" element={<ConfirmationPage />} />
+        <Route path="/my-results" element={<MyResultsPage />} />
+        <Route path="/correction/:referenceNumber" element={<CorrectionRequestPage />} />
       </Route>
 
       {/* Admin area — each page supplies its own Layout */}
@@ -78,6 +83,14 @@ function Routed() {
           element={
             <RequireAdminRole roles={['verifying_admin', 'chief_admin']}>
               <CorrectionsPage />
+            </RequireAdminRole>
+          }
+        />
+        <Route
+          path="/corrections/:id"
+          element={
+            <RequireAdminRole roles={['verifying_admin', 'chief_admin']}>
+              <CorrectionDetailPage />
             </RequireAdminRole>
           }
         />
