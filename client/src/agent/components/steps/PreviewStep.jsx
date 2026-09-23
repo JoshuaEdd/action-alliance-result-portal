@@ -17,7 +17,7 @@ const fmt = (iso) => {
 
 export default function PreviewStep() {
   const { token } = useAuth();
-  const { draft, partyVotes, photos, photoPreviews, photoMeta, gps, goBack, submit, submitting, submitError } = useSubmission();
+  const { draft, partyVotes, photoPreviews, photoMeta, gps, goBack, submit, submitting, submitError } = useSubmission();
   const [previewStage, setPreviewStage] = useState(0); // 0 = data, 1 = parties, 2 = photos
   const [parties, setParties] = useState([]);
 

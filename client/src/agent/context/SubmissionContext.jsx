@@ -291,6 +291,7 @@ export function SubmissionProvider({ children }) {
         setSubmitResult({ queued: true });
         clearDraft();
       } else {
+        console.error('[submit] result upload failed', { status: err.status, message: err.message, details: err.details });
         setSubmitError(err.message);
       }
     } finally {
