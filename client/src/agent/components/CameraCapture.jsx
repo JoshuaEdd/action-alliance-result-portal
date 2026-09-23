@@ -22,8 +22,6 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [error, setError] = useState(null); // { title, detail }
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const previewRetried = useRef(false);
   const [active, setActive] = useState(false);
   const [stream, setStream] = useState(null);
   const [facing, setFacing] = useState(defaultFacing);
@@ -122,38 +120,6 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
 
-  // Derive the preview URL from the blob AFTER commit (not inside the async
-  // capture callback): creating it there and mounting the <img> in the same
-  // tick lets some browsers fail the load and renders a blank frame. The
-  // effect owns the URL lifecycle so retakes/recaptures don't leak.
-  useEffect(() => {
-    if (!captured) {
-      setPreviewUrl(null);
-      previewRetried.current = false;
-      return;
-    }
-    let url;
-    try {
-      url = URL.createObjectURL(captured);
-    } catch {
-      return;
-    }
-    setPreviewUrl(url);
-    previewRetried.current = false;
-    return () => URL.revokeObjectURL(url);
-  }, [captured]);
-
-  const handlePreviewError = () => {
-    if (!captured || previewRetried.current) return;
-    previewRetried.current = true;
-    try {
-      const url = URL.createObjectURL(captured);
-      setPreviewUrl(url);
-    } catch {
-      /* give up — the blob itself is broken */
-    }
-  };
-
   const handleMetadata = () => {
     const v = videoRef.current;
     if (!v || v.videoWidth === 0) return;
@@ -240,6 +206,11 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
     const capturedAt = new Date();
     drawWatermark(ctx, canvas.width, canvas.height, capturedAt, site);
 
+    // Preview comes from a synchronous data URL, not a blob object URL: data
+    // URLs always render in an <img> (URL.createObjectURL can fail to load on
+    // some devices). The blob below is still what gets uploaded.
+    const previewDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
     canvas.toBlob(
       (blob) => {
         if (!blob) {
@@ -250,9 +221,7 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
         setActive(false);
         setStream(null);
         setVideoReady(false);
-        // The parent stores the blob; the preview URL is derived from it in an
-        // effect. No URL is minted here so nothing is ever orphaned.
-        onCapture(blob, null, capturedAt.toISOString());
+        onCapture(blob, previewDataUrl, capturedAt.toISOString());
       },
       'image/jpeg',
       0.85
@@ -263,8 +232,8 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
     <div className="field">
       <label>{label}</label>
       <div className={`camera-frame ${active ? 'is-live' : ''}`}>
-        {previewUrl && !active ? (
-          <img src={previewUrl} alt={`${label} preview`} onError={handlePreviewError} />
+        {captured && !active ? (
+          <img src={captured} alt={`${label} preview`} />
         ) : active ? (
           <>
             <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={handleMetadata} />
@@ -288,7 +257,7 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        {previewUrl && !active ? (
+        {captured && !active ? (
           <button type="button" className="btn btn-secondary" onClick={() => startCamera()}>Retake</button>
         ) : active ? (
           <>

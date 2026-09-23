@@ -616,9 +616,23 @@ button {
   box-shadow: var(--shadow-card);
 }
 .camera-frame video, .camera-frame img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* Older browsers without aspect-ratio collapse the frame to ~0 height,
+   which makes the placeholder and preview invisible. Fall back to the
+   classic padding-bottom ratio box; children are absolute so they fill it. */
+@supports not (aspect-ratio: 3 / 4) {
+  .camera-frame {
+    height: 0;
+    padding-bottom: 133.333%;
+  }
+  .preview-frame {
+    height: 180px;
+  }
 }
 .camera-frame.is-live video {
   animation: viewfinder-in 0.4s ease;

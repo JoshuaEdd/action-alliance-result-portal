@@ -81,11 +81,11 @@ export default function PhotoCaptureStep() {
     }
   }, [requestGps]);
 
-  const handleCapture = (key) => (blob, _previewUrl, capturedAt) => {
+  const handleCapture = (key) => (blob, previewDataUrl, capturedAt) => {
     setPhotos((p) => ({ ...p, [key]: blob }));
-    // The preview URL is derived from the blob inside CameraCapture after
-    // commit (reliable on every browser); the parent only tracks the blob.
-    setPreviews((p) => ({ ...p, [key]: blob }));
+    // previewDataUrl is a data: URL minted synchronously from the canvas at
+    // shutter press — guaranteed to render in the <img> on every device.
+    setPreviews((p) => ({ ...p, [key]: previewDataUrl }));
     setPhotoMeta((m) => ({ ...m, [key]: capturedAt }));
     // Durable local audit trail — written even with zero connectivity so a
     // dropped signal can never erase when/where this photo was taken.
