@@ -109,11 +109,19 @@ function Routed() {
   );
 }
 
+// The brand strip only belongs on signed-in pages (agent wizard, admin
+// dashboards). Public routes — login, OTP, registration — render clean so
+// the sign-in screen stands on its own.
+function AuthenticatedTopBar() {
+  const { token } = useAuth();
+  return token ? <TopBar /> : null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <TopBar />
+        <AuthenticatedTopBar />
         <Routed />
       </ErrorBoundary>
     </BrowserRouter>

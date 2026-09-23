@@ -130,8 +130,17 @@ router.post(
         // time, then to server receive time). created_at stays as the
         // server-side receipt time — the two can differ by hours when a
         // submission was queued offline.
+        // d.capturedAt arrives as a datetime STRING while a per-photo
+        // timestamp is already a Date — coercing both to a real Date here
+        // keeps the .toISOString() log below (and the column write) from
+        // ever throwing a TypeError on a missing timestamp.
+        const rawCapture = d.photoTimestamps?.[field] || d.capturedAt;
         const capturedAt =
-          d.photoTimestamps?.[field] || d.capturedAt || new Date();
+          rawCapture instanceof Date
+            ? rawCapture
+            : typeof rawCapture === 'string' && !Number.isNaN(Date.parse(rawCapture))
+              ? new Date(rawCapture)
+              : new Date();
         console.log(
           `[submission] photo received ref=${referenceNumber} type=${photoType} ` +
           `captured_at=${capturedAt.toISOString()} received_at=${new Date().toISOString()} ` +
