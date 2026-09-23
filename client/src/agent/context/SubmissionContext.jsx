@@ -64,6 +64,14 @@ export function SubmissionProvider({ children }) {
   // suited to localStorage; a background sync worker would be the next step
   // if the app needs to survive a full process kill mid-capture.
   const [photos, setPhotos] = useState({}); // { agentTagPhoto, resultSheetPhoto, agentPassportPhoto }
+  // data: URL of each captured photo, keyed like photos. This is the review
+  // state for the capture step AND the Review-photos stage: a captured photo
+  // must keep being previewable even if the agent navigates away and back
+  // (the step div remounts on step changes, wiping local-only state).
+  const [photoPreviews, setPhotoPreviews] = useState({});
+  // Per-slot acceptance flag: { key: true } once the agent taps "Use Photo"
+  // on the review of that shot.
+  const [photoConfirmed, setPhotoConfirmed] = useState({});
   // Exact wall-clock ISO time of each shutter press, keyed like photos.
   // Travels with the submission so the server can store per-photo capture
   // times even when everything arrives hours later via the offline queue.
@@ -217,6 +225,8 @@ export function SubmissionProvider({ children }) {
     setDraft(emptyDraft);
     setPartyVotes({});
     setPhotos({});
+    setPhotoPreviews({});
+    setPhotoConfirmed({});
     setPhotoMeta({});
     setGps(null);
     setGpsError(null);
@@ -314,6 +324,10 @@ export function SubmissionProvider({ children }) {
         seedPartyVotes,
         photos,
         setPhotos,
+        photoPreviews,
+        setPhotoPreviews,
+        photoConfirmed,
+        setPhotoConfirmed,
         photoMeta,
         setPhotoMeta,
         gps,

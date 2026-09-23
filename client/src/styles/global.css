@@ -765,6 +765,31 @@ button {
   color: var(--ink-soft);
   font-size: 12px;
 }
+/* Photo-review actions: show the shot with Retake / Use Photo, then a
+   compact accepted-state bar once confirmed. */
+.capture-confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.capture-confirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--field-green-dark);
+}
+.capture-confirmed::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--field-green-dark);
+  box-shadow: 0 0 0 3px rgba(0, 200, 83, 0.18);
+}
 
 /* ── Confirmation success animation ───────────── */
 .confirm-wrap {
