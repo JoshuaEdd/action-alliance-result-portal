@@ -37,6 +37,10 @@ export default function PhotoCaptureStep() {
   const {
     photos,
     setPhotos,
+    photoPreviews,
+    setPhotoPreviews,
+    photoConfirmed,
+    setPhotoConfirmed,
     photoMeta,
     setPhotoMeta,
     gps,
@@ -48,7 +52,6 @@ export default function PhotoCaptureStep() {
     goNext,
     goBack,
   } = useSubmission();
-  const [previews, setPreviews] = useState({});
   const [locating, setLocating] = useState(false);
   // The agent's assigned polling unit, burned onto every photo stamp so the
   // submitted sheet is self-identifying even before it's matched in the DB.
@@ -84,9 +87,17 @@ export default function PhotoCaptureStep() {
   const handleCapture = (key) => (blob, previewDataUrl, capturedAt) => {
     setPhotos((p) => ({ ...p, [key]: blob }));
     // previewDataUrl is a data: URL minted synchronously from the canvas at
-    // shutter press — guaranteed to render in the <img> on every device.
-    setPreviews((p) => ({ ...p, [key]: previewDataUrl }));
+    // shutter press — guaranteed to render in the <img> on every device. It
+    // lives in context so the review survives navigating away and back.
+    setPhotoPreviews((p) => ({ ...p, [key]: previewDataUrl }));
     setPhotoMeta((m) => ({ ...m, [key]: capturedAt }));
+    if (import.meta.env.DEV) {
+      console.info('[capture]', {
+        slot: key,
+        blob: { type: blob?.type, size: blob?.size },
+        preview: previewDataUrl ? `${previewDataUrl.slice(0, 22)}…(${previewDataUrl.length} chars)` : null,
+      });
+    }
     // Durable local audit trail — written even with zero connectivity so a
     // dropped signal can never erase when/where this photo was taken.
     logCapture({
@@ -96,6 +107,31 @@ export default function PhotoCaptureStep() {
       lng: gps?.lng ?? null,
       accuracy: gps?.accuracy ?? null,
     }).catch(() => {});
+  };
+
+  // A retake discards the previous capture ENTIRELY — blob, preview, meta and
+  // confirmation are all removed so there is no way to submit the old photo.
+  const handleRetake = (key) => () => {
+    setPhotos((p) => {
+      const n = { ...p };
+      delete n[key];
+      return n;
+    });
+    setPhotoPreviews((p) => {
+      const n = { ...p };
+      delete n[key];
+      return n;
+    });
+    setPhotoConfirmed((p) => {
+      const n = { ...p };
+      delete n[key];
+      return n;
+    });
+    setPhotoMeta((m) => {
+      const n = { ...m };
+      delete n[key];
+      return n;
+    });
   };
 
   const allCaptured = SLOTS.every((s) => photos[s.key]);
@@ -161,8 +197,11 @@ export default function PhotoCaptureStep() {
             <div key={s.key}>
               <CameraCapture
                 label={s.label}
-                captured={previews[s.key]}
+                captured={photoPreviews[s.key]}
+                confirmed={!!photoConfirmed[s.key]}
                 onCapture={handleCapture(s.key)}
+                onRetake={handleRetake(s.key)}
+                onConfirm={() => setPhotoConfirmed((p) => ({ ...p, [s.key]: true }))}
                 geo={gps}
                 defaultFacing={s.defaultFacing}
                 site={site}

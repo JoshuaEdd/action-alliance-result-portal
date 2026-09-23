@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useSubmission } from '../../context/SubmissionContext';
 import { api } from '../../../api/client';
@@ -17,7 +17,7 @@ const fmt = (iso) => {
 
 export default function PreviewStep() {
   const { token } = useAuth();
-  const { draft, partyVotes, photos, photoMeta, gps, goBack, submit, submitting, submitError } = useSubmission();
+  const { draft, partyVotes, photos, photoPreviews, photoMeta, gps, goBack, submit, submitting, submitError } = useSubmission();
   const [previewStage, setPreviewStage] = useState(0); // 0 = data, 1 = parties, 2 = photos
   const [parties, setParties] = useState([]);
 
@@ -25,16 +25,9 @@ export default function PreviewStep() {
     api.getParties(token).then(setParties).catch(() => {});
   }, [token]);
 
-  // Object URLs for the captured blobs, memoized so they aren't recreated on
-  // every render (revoked only when the photo set changes).
-  const photoUrls = useMemo(() => {
-    const urls = {};
-    for (const { key } of SLOTS) {
-      if (photos[key]) urls[key] = URL.createObjectURL(photos[key]);
-    }
-    return urls;
-  }, [photos]);
-
+  // photoPreviews are the data: URLs minted at shutter press and kept in
+  // context; the displayed image is exactly the captured frame (matches the
+  // blob that is uploaded with the submission).
   const totalValidVotes = parties.reduce((sum, p) => sum + (Number(partyVotes[p.id]) || 0), 0);
   const totalInvalidVotes = Number(draft.totalInvalidVotes) || 0;
 
@@ -100,8 +93,8 @@ export default function PreviewStep() {
             {SLOTS.map((s) => (
               <div className="preview-photo" key={s.key}>
                 <div className="camera-frame preview-frame">
-                  {photos[s.key] && photoUrls[s.key] ? (
-                    <img src={photoUrls[s.key]} alt={s.label} />
+                  {photoPreviews[s.key] ? (
+                    <img src={photoPreviews[s.key]} alt={s.label} />
                   ) : (
                     <span className="preview-empty">{s.label}</span>
                   )}

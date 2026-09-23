@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 //    GPS-fix time), so a poor connection can never blur when photos were
 //    actually taken. The timestamp rides along to the server and is also
 //    baked into the photo as a compact bottom watermark strip.
-export default function CameraCapture({ label, onCapture, captured, geo, defaultFacing = 'environment', site = '' }) {
+export default function CameraCapture({ label, onCapture, captured, confirmed = false, onConfirm, onRetake, geo, defaultFacing = 'environment', site = '' }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [error, setError] = useState(null); // { title, detail }
@@ -142,6 +142,13 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
     startCamera(next);
   };
 
+  // Discard the prior capture (parent removes the blob/preview/confirmation)
+  // and bring the live viewfinder straight back.
+  const handleRetake = () => {
+    onRetake?.();
+    startCamera();
+  };
+
   // ── Subtle single-band watermark ─────────────────────────────────
   // One compact translucent strip along the bottom: capture time, then
   // coordinates / place / polling unit when known. No top banner and no
@@ -258,7 +265,17 @@ export default function CameraCapture({ label, onCapture, captured, geo, default
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
         {captured && !active ? (
-          <button type="button" className="btn btn-secondary" onClick={() => startCamera()}>Retake</button>
+          confirmed ? (
+            <div className="capture-confirm-bar">
+              <span className="capture-confirmed">✓ Captured and accepted</span>
+              <button type="button" className="btn btn-secondary" onClick={handleRetake}>Change photo</button>
+            </div>
+          ) : (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={handleRetake}>Retake</button>
+              <button type="button" className="btn btn-primary" onClick={onConfirm}>Use Photo</button>
+            </>
+          )
         ) : active ? (
           <>
             <button type="button" className="btn btn-secondary" onClick={flipCamera}>
