@@ -189,6 +189,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_accepted_submission_per_pu
   ON submissions (polling_unit_id)
   WHERE duplicate_of IS NULL AND status != 'flagged';
 
+-- Migration: the reverse-geocoded capture point was added after some prod
+-- DBs were created, and CREATE TABLE IF NOT EXISTS will not backfill an
+-- existing table. Idempotent for DBs that already have the column.
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS capture_place TEXT;
+
 CREATE TABLE IF NOT EXISTS submission_photos (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,

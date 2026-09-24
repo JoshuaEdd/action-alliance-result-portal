@@ -173,7 +173,16 @@ router.post(
           error: 'A result has already been submitted for this polling unit. This attempt has been flagged as a duplicate for administrator review.',
         });
       }
-      console.error(err);
+      console.error(`[submissions] POST / failed:`, err);
+      // The DB cause (missing column, constraint, etc.) goes in the response
+      // in dev so the failure is diagnosable at the client; production keeps
+      // a clean generic message with the stack reserved for server logs.
+      if (process.env.NODE_ENV !== 'production') {
+        return res.status(500).json({
+          error: 'Could not save submission, please retry',
+          details: err.message,
+        });
+      }
       res.status(500).json({ error: 'Could not save submission, please retry' });
     } finally {
       client.release();
