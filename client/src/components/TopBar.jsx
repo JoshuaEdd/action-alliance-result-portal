@@ -1,8 +1,8 @@
 import AaLogo from './AaLogo';
 
-// Persistent brand strip pinned to the top of every page (login, register,
-// agent wizard, confirmation, admin). Sticky so it never scrolls away but
-// keeps its own row in the document flow — no page content hides behind it.
+// Brand strip pinned to the agent app (rendered from router.jsx only for
+// agent sessions). Sticky so it never scrolls away but keeps its own row in
+// the document flow — no page content hides behind it.
 export default function TopBar() {
   return (
     <header className="top-brand">

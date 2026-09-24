@@ -19,11 +19,11 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0 0 8px; letter-spacing: 
 
 .sidebar {
   position: fixed;
-  top: 52px;
+  top: 0;
   left: 0;
   bottom: 0;
   width: 240px;
-  height: calc(100vh - 52px);
+  height: 100vh;
   background: var(--ink);
   color: var(--paper);
   padding: var(--step-24) var(--step-16);
@@ -124,7 +124,7 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0 0 8px; letter-spacing: 
 /* ── Sticky Top Bar: Breadcrumbs & Page Heading ── */
 .admin-sticky-header {
   position: sticky;
-  top: 52px;
+  top: 0;
   z-index: 30;
   background: var(--paper-dim);
   padding: var(--step-20) 0 var(--step-16);

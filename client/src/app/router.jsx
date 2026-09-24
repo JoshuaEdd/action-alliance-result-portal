@@ -109,12 +109,12 @@ function Routed() {
   );
 }
 
-// The brand strip only belongs on signed-in pages (agent wizard, admin
-// dashboards). Public routes — login, OTP, registration — render clean so
-// the sign-in screen stands on its own.
+// The brand strip only belongs on the agent app. Public routes (login, OTP,
+// registration) stay clean, and the admin app has its own sidebar branding —
+// both already render without the global strip.
 function AuthenticatedTopBar() {
-  const { token } = useAuth();
-  return token ? <TopBar /> : null;
+  const { token, user } = useAuth();
+  return token && user?.role === 'agent' ? <TopBar /> : null;
 }
 
 export default function App() {

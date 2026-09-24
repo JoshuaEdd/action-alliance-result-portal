@@ -25,7 +25,20 @@ const hasClient = existsSync(path.join(clientDist, 'index.html'));
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(helmet());
+// Photos are served to authenticated admins as bytes and rendered in the
+// browser through blob: object URLs (the agent portal uses data: URLs for its
+// capture preview). Helmet's default CSP only allows 'self' + data: images,
+// which silently breaks those tiles — allow blob: too. Blob URLs are created
+// by the page itself, so this is safe.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        imgSrc: ["'self'", 'data:', 'blob:'],
+      },
+    },
+  })
+);
 app.use(
   cors({
     origin: ['http://localhost:5173', 'http://localhost:5174'],
