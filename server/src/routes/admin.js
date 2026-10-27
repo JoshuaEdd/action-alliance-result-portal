@@ -182,7 +182,8 @@ router.get('/wards/:wardId/polling-units', audit('view_pu_list'), async (req, re
 // ── FR-4.6 — full submitted detail for one polling unit ────────────
 router.get('/polling-units/:id', audit('view_pu_detail'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT s.*, pu.name AS pu_name, pu.pu_number, w.name AS ward_name, lg.name AS lga_name,
+    `SELECT s.*, pu.name AS pu_name, pu.pu_number, w.id AS ward_id, lg.id AS lga_id,
+            w.name AS ward_name, lg.name AS lga_name,
             a.full_name AS agent_account_name
      FROM polling_units pu
      JOIN wards w ON w.id = pu.ward_id
@@ -558,86 +559,6 @@ router.get('/export/pdf/federal', requireRole('limited_admin', 'verifying_admin'
   sendCompiledPdf({ res, level: 'federal', scope: req.user.scopeLocalGovernmentId })
 );
 
-// ── Invite codes — how a self-registering agent gets vetted for a
-// specific polling unit (any admin role can generate/view; codes are
-// scoped to whatever PU the admin picks, not to the admin's own scope) ──
-function generateCode() {
-  // Short, easy to read aloud/type: e.g. "7K3P-QX9M"
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I ambiguity
-  const part = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `${part()}-${part()}`;
-}
-
-// Mass-generation at State (all PUs), LGA, or ward granularity — one code
-// for every polling unit that doesn't yet have an agent or a live unused
-// code. Idempotent: units already covered are skipped (existing-Unused de-dup
-// is a DB consult, and the app also avoids racing with the per-PU generator).
-async function generateInviteCodesForScope({ scope, lgaId, wardId, createdBy }) {
-  const conditions = [`NOT EXISTS (SELECT 1 FROM users u WHERE u.assigned_polling_unit_id = pu.id AND u.role = 'agent')`,
-                      `NOT EXISTS (SELECT 1 FROM invite_codes ic
-                                     WHERE ic.polling_unit_id = pu.id
-                                       AND ic.used_at IS NULL
-                                       AND (ic.expires_at IS NULL OR ic.expires_at > now()))`];
-  const params = [];
-  let where = `SELECT pu.id FROM polling_units pu JOIN wards w ON w.id = pu.ward_id WHERE ${conditions.join(' AND ')}`;
-  if (scope === 'lga' && lgaId) {
-    where += ` AND w.local_government_id = $1`;
-    params.push(lgaId);
-  } else if (scope === 'ward' && wardId) {
-    where += ` AND pu.ward_id = $1`;
-    params.push(wardId);
-  }
-
-  const { rows } = await pool.query(where, params);
-
-  const client = await pool.connect();
-  const created = [];
-  try {
-    await client.query('BEGIN');
-    for (const { id } of rows) {
-      let code = null;
-      for (let attempt = 0; attempt < 5 && !code; attempt++) {
-        const candidate = generateCode();
-        const exists = await client.query(`SELECT 1 FROM invite_codes WHERE code = $1`, [candidate]);
-        if (!exists.rows[0]) code = candidate;
-      }
-      if (!code) continue; // leave unit for a retry pass if unlucky on collisions
-      const inserted = await client.query(
-        `INSERT INTO invite_codes (code, polling_unit_id, created_by) VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING RETURNING id, code, polling_unit_id`,
-        [code, id, createdBy]
-      );
-      if (inserted.rows[0]) created.push(inserted.rows[0]);
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-  return { requested: rows.length, created: created.length };
-}
-
-// Mass generation at State / LGA / ward level (keeps the per-PU route below).
-router.post(
-  '/invite-codes/bulk',
-  audit('bulk_create_invite_codes', { targetTable: 'invite_codes' }),
-  async (req, res) => {
-    const { scope, lgaId, wardId } = req.body;
-    if (!['all', 'lga', 'ward'].includes(scope)) {
-      return res.status(400).json({ error: 'scope must be one of: all, lga, ward' });
-    }
-    try {
-      const result = await generateInviteCodesForScope({ scope, lgaId, wardId, createdBy: req.user.id });
-      res.status(201).json(result);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Could not generate invite codes, please retry' });
-    }
-  }
-);
-
 // Delete (permanently retire) an admin account — the row is soft-deleted
 // (`deleted_at`) rather than hard-dropped so it disappears from the
 // management list and can never sign in, while the many audit/approval rows
@@ -674,69 +595,6 @@ router.delete(
     res.json({ deleted: true });
   }
 );
-
-router.post('/invite-codes', audit('create_invite_code'), async (req, res) => {
-  const { pollingUnitId, expiresInDays } = req.body;
-  if (!pollingUnitId) return res.status(400).json({ error: 'pollingUnitId is required' });
-
-  // A PU that already has an agent doesn't need a new code
-  const { rows: existingAgent } = await pool.query(
-    `SELECT id FROM users WHERE assigned_polling_unit_id = $1 AND role = 'agent'`,
-    [pollingUnitId]
-  );
-  if (existingAgent[0]) {
-    return res.status(409).json({ error: 'This polling unit already has a registered agent' });
-  }
-
-  let code;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    code = generateCode();
-    const { rows } = await pool.query(`SELECT 1 FROM invite_codes WHERE code = $1`, [code]);
-    if (!rows[0]) break;
-    code = null;
-  }
-  if (!code) return res.status(500).json({ error: 'Could not generate a unique code, please retry' });
-
-  const { rows } = await pool.query(
-    `INSERT INTO invite_codes (code, polling_unit_id, created_by, expires_at)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, code, polling_unit_id, expires_at, created_at`,
-    [
-      code,
-      pollingUnitId,
-      req.user.id,
-      expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : null,
-    ]
-  );
-  res.status(201).json(rows[0]);
-});
-
-router.get('/invite-codes', audit('view_invite_codes'), async (req, res) => {
-  const { pollingUnitId } = req.query;
-  const { rows } = await pool.query(
-    `SELECT ic.id, ic.code, ic.polling_unit_id, ic.expires_at, ic.created_at,
-            ic.used_at, u.full_name AS used_by_name,
-            pu.name AS pu_name, pu.pu_number
-     FROM invite_codes ic
-     JOIN polling_units pu ON pu.id = ic.polling_unit_id
-     LEFT JOIN users u ON u.id = ic.used_by
-     WHERE ($1::uuid IS NULL OR ic.polling_unit_id = $1)
-     ORDER BY ic.created_at DESC
-     LIMIT 100`,
-    [pollingUnitId || null]
-  );
-  res.json(rows);
-});
-
-// Revoke an unused code (e.g. it was issued to the wrong person and shared insecurely)
-router.delete('/invite-codes/:id', audit('revoke_invite_code'), async (req, res) => {
-  const { rows } = await pool.query(
-    `DELETE FROM invite_codes WHERE id = $1 AND used_by IS NULL RETURNING id`,
-    [req.params.id]
-  );
-  if (!rows[0]) return res.status(404).json({ error: 'Code not found, or already used' });
-  res.json({ deleted: true });
-});
 
 // ── SEC-4 — correction request review workflow ─────────────────────
 // Admins never get a "save edits" tool for a submitted result; they only

@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import Layout from '../components/Layout';
 import Breadcrumbs from '../components/Breadcrumbs';
-import InviteCodesPanel from '../components/InviteCodesPanel';
 import PartyResultsPanel from '../components/PartyResultsPanel';
 
 const PHOTO_LABELS = {
@@ -21,27 +20,39 @@ const PHOTO_LABELS = {
 function PhotoTile({ label, token, photo, onOpen }) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let revoke;
+    let active = true;
+    setUrl(null);
+    setError(null);
+    setLoaded(false);
     if (!photo) return;
     api
       .getPhotoUrl(token, photo.id)
       .then((u) => {
+        if (!active) return URL.revokeObjectURL(u);
         setUrl(u);
         revoke = u;
       })
-      .catch((e) => setError(e.message));
-    return () => revoke && URL.revokeObjectURL(revoke);
+      .catch((e) => { if (active) setError(e.message); });
+    return () => {
+      active = false;
+      if (revoke) URL.revokeObjectURL(revoke);
+    };
   }, [token, photo]);
 
   return (
-    <button type="button" className="ph" onClick={() => onOpen && onOpen({ label, url })} disabled={!url || !!error} title={photo ? 'Click to view full size' : undefined}>
+    <button type="button" className="ph" onClick={() => onOpen?.({ label, url, capturedAt: photo.captured_at })} disabled={!loaded || !!error} aria-label={`Enlarge ${label}`} aria-busy={!!photo && !loaded && !error} title={photo ? 'Click to view full size' : undefined}>
       {photo ? (
         error ? (
-          <span>{label}\nerror loading photo</span>
+          <span role="status">{label}{'\n'}Unable to load photo</span>
         ) : (
-          <img src={url} alt={label} />
+          <>
+            {!loaded && <span role="status">{label}{'\n'}Loading photo…</span>}
+            {url && <img src={url} alt={label} onLoad={() => setLoaded(true)} onError={() => setError('Unable to display photo')} />}
+          </>
         )
       ) : (
         `${label}\nnot captured`
@@ -106,9 +117,9 @@ export default function PollingUnitPage() {
       <div className="admin-sticky-header">
         <Breadcrumbs
           crumbs={[
-            { label: 'Federal Constituency', to: '/dashboard' },
-            { label: pu.lga_name, to: '#' },
-            { label: pu.ward_name, to: '#' },
+            { label: 'Ahiazu Federal Constituency', to: '/dashboard' },
+            { label: pu.lga_name, to: `/lga/${pu.lga_id}` },
+            { label: pu.ward_name, to: `/lga/${pu.lga_id}/ward/${pu.ward_id}` },
             { label: `${pu.pu_name} — PU ${pu.pu_number}`, to: `/polling-unit/${id}` },
           ]}
         />
@@ -130,7 +141,6 @@ export default function PollingUnitPage() {
           <p style={{ color: 'var(--ink-soft)', marginBottom: 24 }}>
             No accepted result has been submitted for this polling unit yet.
           </p>
-          <InviteCodesPanel pollingUnitId={id} />
         </>
       ) : (
         <>
@@ -147,6 +157,9 @@ export default function PollingUnitPage() {
             <div>Submitted by: {pu.submitting_agent_name} ({pu.submitting_agent_phone})</div>
             <div>Captured: {new Date(pu.captured_at).toLocaleString()}</div>
             {pu.capture_place && <div>Capture place: {pu.capture_place}</div>}
+            {pu.capture_lat != null && pu.capture_lng != null && (
+              <div>Capture coordinates: {pu.capture_lat}, {pu.capture_lng}</div>
+            )}
             <div>
               Status: <span className={`status-pill ${pu.status}`}>{pu.status.replace('_', ' ')}</span>
               {pu.gps_flagged && <span className="status-pill flagged" style={{ marginLeft: 6 }}>GPS outside expected radius</span>}
@@ -190,7 +203,13 @@ export default function PollingUnitPage() {
                 {lightbox && (
                   <>
                     <img className="lightbox-img" src={lightbox.url} alt={lightbox.label} />
-                    <div className="lightbox-meta">{lightbox.label} — click outside or press ESC to close</div>
+                    <div className="lightbox-meta">
+                      <div>{lightbox.label} — {pu.pu_name} — PU {pu.pu_number} — {pu.reference_number}</div>
+                      {lightbox.capturedAt && <div>{new Date(lightbox.capturedAt).toLocaleString()}</div>}
+                      {pu.capture_place && <div>{pu.capture_place}</div>}
+                      {pu.capture_lat != null && pu.capture_lng != null && <div>Capture coordinates: {pu.capture_lat}, {pu.capture_lng}</div>}
+                      <div>Click outside or press ESC to close</div>
+                    </div>
                   </>
                 )}
               </Modal.Body>

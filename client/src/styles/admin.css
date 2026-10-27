@@ -188,6 +188,8 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0 0 8px; letter-spacing: 
   list-style: none;
   margin: 0;
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 .breadcrumbs__item {
   display: inline-flex;
@@ -197,8 +199,15 @@ h1, h2, h3 { font-family: var(--font-display); margin: 0 0 8px; letter-spacing: 
   color: var(--accredited-blue);
   text-decoration: none;
   font-size: 13px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .breadcrumbs__link:hover { text-decoration: underline; }
+.breadcrumb a:focus-visible,
+.breadcrumb button:focus-visible {
+  outline: 2px solid var(--aa-orange);
+  outline-offset: 3px;
+}
 /* HeroUI marks the current page with data-current on the item (the <li>);
    the trailing breadcrumb renders as a non-link span inside it. */
 .breadcrumbs__item[data-current="true"] .breadcrumbs__link {
@@ -450,6 +459,7 @@ table.data-table td.numeric { font-family: var(--font-mono); text-align: right; 
 }
 .detail-photo-grid .ph {
   position: relative;
+  width: 100%;
   aspect-ratio: 3/4;
   background: var(--paper-dim);
   border: none;
@@ -498,8 +508,8 @@ table.data-table td.numeric { font-family: var(--font-mono); text-align: right; 
 }
 .lightbox-close {
   position: absolute;
-  top: -14px;
-  right: -14px;
+  top: 8px;
+  right: 8px;
   z-index: 1;
   color: #fff;
   background: rgba(255, 255, 255, 0.18);

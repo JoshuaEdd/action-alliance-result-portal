@@ -6,7 +6,6 @@ import { api } from '../../api/client';
 import Layout from '../components/Layout';
 import Breadcrumbs from '../components/Breadcrumbs';
 import PartyResultsPanel from '../components/PartyResultsPanel';
-import MassInviteCodesButton from '../components/MassInviteCodesButton';
 import { downloadXlsx } from './DashboardPage';
 
 export default function LgaPage() {
@@ -52,7 +51,6 @@ export default function LgaPage() {
       <div className="toolbar">
         <h2 style={{ fontSize: 16 }}>Wards</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <MassInviteCodesButton scope="lga" lgaId={lgaId} label="Generate codes (this LGA)" />
           <Button className="btn btn-secondary" style={{ minHeight: 32, padding: '0 10px', fontSize: 12 }} onPress={() => downloadXlsx(token, 'lga', lgaId)}>
             Export Excel (.xlsx)
           </Button>
