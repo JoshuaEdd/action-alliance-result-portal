@@ -52,9 +52,7 @@ action-alliance-result-portal/
 │   │   │   ├── components/
 │   │   │   │   ├── Breadcrumbs.jsx         # Accessible breadcrumbs (Home + Back + HeroUI trail)
 │   │   │   │   ├── ErrorBoundary.jsx       # Catch-all error boundary
-│   │   │   │   ├── InviteCodesPanel.jsx    # Single PU agent invite code generator
 │   │   │   │   ├── Layout.jsx              # Fixed static sidebar + scrollable admin layout
-│   │   │   │   ├── MassInviteCodesButton.jsx # Bulk invite code generation (LGA/Ward scope)
 │   │   │   │   └── PartyResultsPanel.jsx   # Leading party declaration & 21-party breakdown
 │   │   │   └── pages/
 │   │   │       ├── AdminsPage.jsx          # Admin account management & role assignment
@@ -78,7 +76,7 @@ action-alliance-result-portal/
 │   │   │   │   └── SubmissionContext.jsx   # Multi-step state, autosave, offline submission
 │   │   │   └── pages/
 │   │   │       ├── ConfirmationPage.jsx    # Post-submission reference receipt
-│   │   │       ├── RegisterPage.jsx        # Agent self-registration with invite code
+│   │   │       ├── RegisterPage.jsx        # Agent registration, email/SMS verification, fingerprint enrollment
 │   │   │       └── WizardPage.jsx          # Submission wizard step container
 │   │   ├── api/
 │   │   │   ├── client.js                   # Authenticated API request client
@@ -127,7 +125,7 @@ action-alliance-result-portal/
 │   │   ├── utils/
 │   │   │   └── otp.js                      # 6-digit OTP generation and delivery helper
 │   │   └── index.js                        # Express server entry point
-│   ├── uploads/                            # Stored result photos directory
+│   ├── uploads/                            # Legacy photo files only; new photo bytes are stored in PostgreSQL
 │   ├── package.json
 │   └── .env.example
 ├── dev.js                                  # Local development runner
@@ -220,13 +218,15 @@ NODE_ENV=production npm start
 | **Agent (`agent`)** | Assigned Polling Unit | Complete 5-step result submission wizard, photo upload, local draft autosave, offline submission queue. |
 | **Limited Admin (`limited_admin`)** | Constituency or Scoped LGA | View dashboard collation summaries, inspect polling unit details/photos, export PDF/Excel reports. |
 | **Verifying Admin (`verifying_admin`)** | Constituency | All Limited Admin permissions + vote on and decide correction requests. |
-| **Chief Admin (`chief_admin`)** | Full System | All Verifying Admin permissions + create/manage admin accounts and generate PU invite codes. |
+| **Chief Admin (`chief_admin`)** | Full System | All Verifying Admin permissions + create/manage admin accounts. |
 
-### Agent Onboarding via Single-Use Invite Codes
-Agents do not register openly or through manual database edits:
-1. An admin opens a polling unit without an agent (`/polling-unit/:id`) and clicks **Generate Code** (or uses **Mass Invite Codes** at the LGA/Ward level).
-2. The agent navigates to `/register`, enters the invite code, full name, phone/email, and password.
-3. Upon registration, the invite code is consumed and the agent account is permanently locked to that specific polling unit.
+### Agent Onboarding
+The current registration flow does not use admin-generated invite codes:
+1. The agent opens `/register`, enters their identity details, selects their polling unit through the LGA/ward cascade, and chooses email or SMS verification.
+2. The agent validates the verification code sent to the chosen channel, then completes device fingerprint enrollment (WebAuthn).
+3. The agent signs in with email and fingerprint. Registration locks their polling-unit assignment and prevents duplicate completed registrations/assignments.
+
+Admin single/bulk invite-code generation, its panels/buttons, and the exclusively used `/api/admin/invite-codes` endpoints have been removed. The existing `invite_codes` table and historical records are preserved; no schema migration is required for this removal. Agent onboarding and authentication implementations are unchanged.
 
 ---
 
@@ -247,10 +247,31 @@ Agents do not register openly or through manual database edits:
 
 ### Administrator Dashboard & Collation
 - **Static Sidebar**: Pinned navigation layout with active indicators and user status always in view.
-- **Sticky Breadcrumb & Heading Bar**: Pinned navigation header allowing one-click traversal (`Constituency → LGA → Ward → Polling Unit`).
+- **Sticky Breadcrumb & Heading Bar**: Pinned navigation header with parent links to the existing routes (`Constituency → LGA → Ward → Polling Unit`). Links support mouse and keyboard activation and wrap on narrow screens; the current item is distinguished from parent links. Home returns to the dashboard; Back follows browser history, or returns to the parent when the page was opened directly.
+- **Submitted-result Photo Inspection**: Open `/polling-unit/:id` to view agent accreditation/tag, official result sheet, and agent portrait/passport previews. Select a preview to enlarge it; close using the close button, Escape, or the backdrop. Capture timestamps, the submission reference and polling unit, and available submission coordinates/place descriptions remain visible. Loading, missing-capture, and image-loading failures are shown explicitly. Photos are fetched with the admin bearer token and rendered using temporary blob URLs; no PDF generation or public photo URL is required. Existing watermarks, stored bytes, and PDF/printing behavior are preserved.
 - **Live Search**: Instant lookup for Local Governments, Wards, and Polling Units.
 - **Real-Time Polling**: Auto-refreshes collation data every 15 seconds without manual page reloads.
 - **Exports**: Instant generation of official PDF summaries and Excel (`.xlsx`) datasets.
+
+### Targeted Regression Checks
+
+From the repository root:
+
+```bash
+npm --prefix server test
+npm --prefix client test
+npm --prefix client run build
+```
+
+The admin browser checks in `client/tests/admin-browser.test.js` use Chromium with controlled API/image fixtures and start their own Vite server on port 5189. To run them, install Playwright and Chromium in a separate tooling directory, then set `PLAYWRIGHT_MODULE` to the absolute path of that installation's `playwright/index.mjs`:
+
+```bash
+PLAYWRIGHT_MODULE="/absolute/path/to/tooling/node_modules/playwright/index.mjs" npm --prefix client test
+```
+
+Without that variable, the browser suite is explicitly skipped; the regular client unit tests still run. Browser coverage includes photo previews/enlargement/failure states, breadcrumb mouse/keyboard/history behavior at mobile/tablet/desktop widths, and absent invite controls for every admin role. Server tests cover protected database/legacy-file photo retrieval, retired invite endpoints, and selected existing onboarding/OTP/fingerprint guards using a mocked database. These checks do not exercise live OTP delivery or physical biometric hardware. Development navigation may emit a recoverable existing HeroUI table row-header error; table behavior is outside these targeted changes.
+
+After building the client, add `ADMIN_TEST_PRODUCTION=1` to the browser-test command to run the same checks against the built app served by Express, including its blob-image content security policy. API/image responses remain browser-mocked; no live database is needed.
 
 ---
 

@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Breadcrumbs } from '@heroui/react';
+import { RouterProvider } from 'react-aria-components';
 
 // Real @heroui/react v3 Breadcrumbs. The Home icon and Back button are app
 // extras that sit alongside the stack; the trail itself is the HeroUI
@@ -7,6 +8,10 @@ import { Breadcrumbs } from '@heroui/react';
 // aria-current="page"). Existing call sites keep passing a crumbs array.
 export default function AppBreadcrumbs({ crumbs, children, showBack = true, separator = '/', isDisabled = false }) {
   const navigate = useNavigate();
+  const goBack = () => {
+    if (window.history.state?.idx > 0) navigate(-1);
+    else navigate(crumbs?.[crumbs.length - 2]?.to || '/dashboard');
+  };
 
   let items;
   if (children) {
@@ -25,13 +30,15 @@ export default function AppBreadcrumbs({ crumbs, children, showBack = true, sepa
         ⌂
       </Link>
       {showBack && (
-        <button type="button" className="breadcrumb-back" onClick={() => navigate(-1)} aria-label="Go back">
+        <button type="button" className="breadcrumb-back" onClick={goBack} aria-label="Go back">
           ‹ Back
         </button>
       )}
-      <Breadcrumbs isDisabled={isDisabled} separator={separator}>
-        {items}
-      </Breadcrumbs>
+      <RouterProvider navigate={navigate}>
+        <Breadcrumbs isDisabled={isDisabled} separator={separator}>
+          {items}
+        </Breadcrumbs>
+      </RouterProvider>
     </nav>
   );
 }

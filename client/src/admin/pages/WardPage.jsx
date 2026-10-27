@@ -6,7 +6,6 @@ import { api } from '../../api/client';
 import Layout from '../components/Layout';
 import Breadcrumbs from '../components/Breadcrumbs';
 import PartyResultsPanel from '../components/PartyResultsPanel';
-import MassInviteCodesButton from '../components/MassInviteCodesButton';
 import { downloadXlsx } from './DashboardPage';
 
 export default function WardPage() {
@@ -73,7 +72,6 @@ export default function WardPage() {
       <div className="toolbar">
         <h2 style={{ fontSize: 16 }}>Polling Units</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <MassInviteCodesButton scope="ward" wardId={wardId} label="Generate codes (this ward)" />
           <Button className="btn btn-secondary" style={{ minHeight: 32, padding: '0 10px', fontSize: 12 }} isDisabled={exportingPdf} onPress={openWardPdf}>
             {exportingPdf ? 'Exporting…' : 'Export PDF'}
           </Button>

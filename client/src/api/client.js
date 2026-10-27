@@ -146,13 +146,4 @@ export const api = {
   updateAdmin: (token, id, payload) => request(`/admin/admins/${id}`, { method: 'PATCH', token, body: payload }),
   deleteAdmin: (token, id) => request(`/admin/admins/${id}`, { method: 'DELETE', token }),
 
-  // --- admin: invite codes ---
-  getInviteCodes: (token, pollingUnitId) =>
-    request(`/admin/invite-codes${pollingUnitId ? `?pollingUnitId=${pollingUnitId}` : ''}`, { token }),
-  createInviteCode: (token, pollingUnitId, expiresInDays) =>
-    request('/admin/invite-codes', { method: 'POST', token, body: { pollingUnitId, expiresInDays } }),
-  bulkInviteCodes: (token, payload) =>
-    request('/admin/invite-codes/bulk', { method: 'POST', token, body: payload }),
-  revokeInviteCode: (token, id) =>
-    request(`/admin/invite-codes/${id}`, { method: 'DELETE', token }),
 };

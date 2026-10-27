@@ -6,7 +6,6 @@ import { api } from '../../api/client';
 import Layout from '../components/Layout';
 import Breadcrumbs from '../components/Breadcrumbs';
 import PartyResultsPanel from '../components/PartyResultsPanel';
-import MassInviteCodesButton from '../components/MassInviteCodesButton';
 import AaLogo from '../../components/AaLogo';
 
 export default function DashboardPage() {
@@ -197,7 +196,6 @@ export default function DashboardPage() {
       <div className="toolbar">
         <h2 style={{ fontSize: 16 }}>Local Governments</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <MassInviteCodesButton scope="all" label="Generate invite codes (all PUs)" />
           <Button className="btn btn-secondary" style={{ minHeight: 32, padding: '0 10px', fontSize: 12 }} onPress={() => downloadXlsx(token, 'federal')}>
             Export Excel (.xlsx)
           </Button>
